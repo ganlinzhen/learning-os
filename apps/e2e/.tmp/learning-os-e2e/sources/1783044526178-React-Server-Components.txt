@@ -1,0 +1,1 @@
+React Server Components 允许服务端参与组件渲染。它把数据获取前移，并减少客户端 JavaScript 负担。

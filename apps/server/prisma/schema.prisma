@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Domain {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Source {
+  id          String             @id @default(cuid())
+  type        String
+  title       String
+  url         String?
+  localPath   String
+  contentHash String
+  status      String
+  content     String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  sessions    IngestionSession[]
+}
+
+model IngestionSession {
+  id                String             @id @default(cuid())
+  sourceId          String
+  latestAgentTaskId String?
+  status            String
+  domainHint        String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  confirmedAt       DateTime?
+  importedAt        DateTime?
+  source            Source             @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  candidates        ConceptCandidate[]
+}
+
+model ConceptCandidate {
+  id         String          @id @default(cuid())
+  sessionId  String
+  title      String
+  summary    String
+  evidence   String?
+  isCore     Boolean         @default(false)
+  isSelected Boolean         @default(false)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  session    IngestionSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  cards      CardCandidate[]
+}
+
+model CardCandidate {
+  id                 String           @id @default(cuid())
+  sessionId          String
+  conceptCandidateId String?
+  type               String
+  question           String
+  answer             String
+  explanation        String?
+  isSelected         Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  conceptCandidate   ConceptCandidate? @relation(fields: [conceptCandidateId], references: [id], onDelete: SetNull)
+}
+
+model Concept {
+  id           String       @id @default(cuid())
+  title        String
+  summary      String
+  explanation  String?
+  evidence     String?
+  status       String
+  masteryScore Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  notes        Note[]
+  reviewCards  ReviewCard[]
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  conceptId String
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  concept   Concept  @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+}
+
+model ReviewCard {
+  id               String      @id @default(cuid())
+  conceptId        String
+  type             String
+  question         String
+  answer           String
+  explanation      String?
+  dueAt            DateTime
+  stability        Float       @default(0)
+  difficultyFsrs   Float       @default(0)
+  elapsedDays      Int         @default(0)
+  scheduledDays    Int         @default(0)
+  reps             Int         @default(0)
+  lapses           Int         @default(0)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  concept          Concept     @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+  reviewLogs       ReviewLog[]
+}
+
+model ReviewLog {
+  id              String     @id @default(cuid())
+  cardId          String
+  conceptId       String
+  rating          String
+  reviewedAt      DateTime
+  nextDueAt       DateTime
+  timeSpentSeconds Int      @default(0)
+  createdAt       DateTime   @default(now())
+  card            ReviewCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+}

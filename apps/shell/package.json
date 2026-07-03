@@ -1,0 +1,27 @@
+{
+  "name": "@learning-os/shell",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Learning OS macOS shell",
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "rm -rf dist .preload-build && tsc -p tsconfig.preload.json && tsc -p tsconfig.json && mkdir -p dist/preload && cp .preload-build/preload/preload.cjs dist/preload/preload.cjs && rm -rf .preload-build",
+    "build:prod": "pnpm build",
+    "dev": "pnpm build && node ./scripts/ensure-electron.mjs && electron dist/main/main.js",
+    "dev:shell": "pnpm build && node ./scripts/ensure-electron.mjs && electron dist/main/main.js",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "package:dir": "ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ electron-builder --config builder/electron-builder.yml --dir",
+    "package:zip": "bash ./scripts/package-macos-zip.sh",
+    "package:mac": "pnpm package:dir && pnpm package:zip",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.15",
+    "electron": "^33.2.1",
+    "electron-builder": "^26.0.12",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,17 @@
+appId: os.learning.macos
+productName: Learning OS
+directories:
+  output: dist-packages
+files:
+  - dist/**
+  - package.json
+extraResources:
+  - from: ../console/dist
+    to: app/console
+  - from: ../server/dist-prod
+    to: server/dist-prod
+  - from: ../generator/dist/learning-os-generator
+    to: generator
+mac:
+  target:
+    - dir
