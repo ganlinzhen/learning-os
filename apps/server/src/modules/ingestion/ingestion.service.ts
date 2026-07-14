@@ -113,6 +113,24 @@ export class IngestionService {
     const candidateConcepts = session.candidates
       .filter((item: any) => !item.isCore)
       .map(this.mapCandidate);
+    const latestTask = session.latestAgentTaskId
+      ? await this.prisma.agentTask.findUnique({ where: { id: session.latestAgentTaskId } })
+      : null;
+    const task = latestTask
+      ? {
+          id: latestTask.id,
+          status: latestTask.status,
+          attemptCount: latestTask.attemptCount,
+          lastErrorCode: latestTask.lastErrorCode,
+          lastErrorMessage: latestTask.lastErrorMessage,
+          canRetry: session.status === "failed" && latestTask.status === "failed",
+        }
+      : {
+          id: `legacy:${session.id}`,
+          status: this.getLegacyTaskStatus(session.status),
+          attemptCount: 0,
+          canRetry: false,
+        };
 
     return {
       sessionId: session.id,
@@ -122,6 +140,7 @@ export class IngestionService {
       status: session.status,
       coreConcepts,
       candidateConcepts,
+      task,
     };
   }
 
@@ -190,4 +209,14 @@ export class IngestionService {
       isSelected: card.isSelected,
     })),
   });
+
+  private getLegacyTaskStatus(sessionStatus: string) {
+    if (sessionStatus === "created") {
+      return "pending" as const;
+    }
+    if (sessionStatus === "processing") {
+      return "running" as const;
+    }
+    return sessionStatus === "failed" ? ("failed" as const) : ("succeeded" as const);
+  }
 }
