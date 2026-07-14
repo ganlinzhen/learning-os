@@ -3,12 +3,13 @@ import { AgentClientService } from "../../infrastructure/agent/agent-client.serv
 import { AppConfigService } from "../../infrastructure/config/app-config.service";
 import { PrismaService } from "../../infrastructure/persistence/prisma.service";
 import { StorageService } from "../../infrastructure/storage/storage.service";
+import { WebContentService } from "../../infrastructure/web/web-content.service";
 import { IngestionController } from "./ingestion.controller";
 import { IngestionService } from "./ingestion.service";
 
 @Module({
   controllers: [IngestionController],
-  providers: [AppConfigService, IngestionService, AgentClientService, StorageService, PrismaService],
+  providers: [AppConfigService, IngestionService, AgentClientService, StorageService, WebContentService, PrismaService],
   exports: [IngestionService],
 })
 export class IngestionModule {}

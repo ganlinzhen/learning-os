@@ -1,0 +1,75 @@
+import { describe, expect, it, vi } from "vitest";
+import { StorageService } from "./storage.service";
+
+describe("StorageService", () => {
+  it("缺少网页地址时返回稳定错误码", async () => {
+    const service = new StorageService(
+      { appRootDir: "/tmp/learning-os" } as any,
+      { fetch: vi.fn() } as any,
+    );
+
+    await expect(service.resolveImportContent({ type: "url" })).rejects.toMatchObject({ code: "web_url_invalid" });
+  });
+
+  it("从 Markdown 的第一个一级标题推断标题", async () => {
+    const service = new StorageService(
+      { appRootDir: "/tmp/learning-os" } as any,
+      { fetch: vi.fn() } as any,
+    );
+
+    await expect(
+      service.resolveImportContent({
+        type: "markdown",
+        content: "# 深度学习\n\n神经网络可以从数据中学习表示。",
+      }),
+    ).resolves.toEqual({
+      title: "深度学习",
+      content: "# 深度学习\n\n神经网络可以从数据中学习表示。",
+    });
+  });
+
+  it("忽略 Markdown 空白显式标题并回退一级标题", async () => {
+    const service = new StorageService(
+      { appRootDir: "/tmp/learning-os" } as any,
+      { fetch: vi.fn() } as any,
+    );
+
+    await expect(
+      service.resolveImportContent({
+        type: "markdown",
+        title: "   ",
+        content: "# 深度学习\n\n神经网络可以从数据中学习表示。",
+      }),
+    ).resolves.toMatchObject({ title: "深度学习" });
+  });
+
+  it("网页导入时优先使用显式标题", async () => {
+    const service = new StorageService(
+      { appRootDir: "/tmp/learning-os" } as any,
+      { fetch: vi.fn() } as any,
+    );
+    vi.spyOn((service as any).webContentService, "fetch").mockResolvedValue({
+      title: "网页标题",
+      content: "网页正文",
+    });
+
+    await expect(
+      service.resolveImportContent({ type: "url", url: "https://example.com", title: "自定义标题" }),
+    ).resolves.toEqual({ title: "自定义标题", content: "网页正文", url: "https://example.com" });
+  });
+
+  it("忽略 URL 空白显式标题并回退网页标题", async () => {
+    const service = new StorageService(
+      { appRootDir: "/tmp/learning-os" } as any,
+      { fetch: vi.fn() } as any,
+    );
+    vi.spyOn((service as any).webContentService, "fetch").mockResolvedValue({
+      title: "网页标题",
+      content: "网页正文",
+    });
+
+    await expect(
+      service.resolveImportContent({ type: "url", url: "https://example.com", title: "   " }),
+    ).resolves.toMatchObject({ title: "网页标题" });
+  });
+});
