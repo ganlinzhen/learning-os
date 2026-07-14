@@ -66,82 +66,98 @@ describe("PrismaService", () => {
     await service.onModuleDestroy();
   });
 
-  it("更新来源时省略本地路径会保留已有的 NULL", async () => {
-    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-null-path-"));
-    const databasePath = join(rootDir, "learning-os.db");
-    const legacy = new DatabaseSync(databasePath);
-    legacy.exec(`
-      create table sources (
-        id text primary key,
-        type text not null,
-        title text not null,
-        url text,
-        local_path text,
-        content_hash text not null,
-        status text not null,
-        content text not null,
-        created_at text not null,
-        updated_at text not null
-      );
-      insert into sources values (
-        'source-null-path', 'url', '空路径来源', null, null, 'hash', 'stored', '内容',
-        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
-      );
-    `);
-    legacy.close();
-
-    const service = new PrismaService({ appRootDir: rootDir, databasePath } as any);
+  it("更新来源时省略本地路径会保留现有路径", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-preserve-path-"));
+    const service = new PrismaService({
+      appRootDir: rootDir,
+      databasePath: join(rootDir, "data", "learning-os.db"),
+    } as any);
     await service.onModuleInit();
-
-    const source = await service.source.update({
-      where: { id: "source-null-path" },
-      data: { title: "更新后的空路径来源" },
+    const created = await service.source.create({
+      data: {
+        type: "text",
+        title: "原始来源",
+        localPath: "/tmp/original-source.txt",
+        contentHash: "hash",
+        status: "stored",
+        content: "内容",
+      },
     });
 
-    expect(source.localPath).toBeUndefined();
+    const source = await service.source.update({
+      where: { id: created.id },
+      data: { title: "更新后的来源" },
+    });
+
+    expect(source.localPath).toBe("/tmp/original-source.txt");
     await service.onModuleDestroy();
-    const persisted = new DatabaseSync(databasePath);
-    expect(persisted.prepare("select local_path from sources where id = ?").get("source-null-path")).toEqual({ local_path: null });
-    persisted.close();
   });
 
-  it("更新来源时传入 null 会清空本地路径", async () => {
-    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-clear-path-"));
-    const databasePath = join(rootDir, "learning-os.db");
-    const legacy = new DatabaseSync(databasePath);
-    legacy.exec(`
-      create table sources (
-        id text primary key,
-        type text not null,
-        title text not null,
-        url text,
-        local_path text,
-        content_hash text not null,
-        status text not null,
-        content text not null,
-        created_at text not null,
-        updated_at text not null
-      );
-      insert into sources values (
-        'source-clear-path', 'text', '待清空路径的来源', null, '/tmp/source.txt', 'hash', 'stored', '内容',
-        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
-      );
-    `);
-    legacy.close();
-
-    const service = new PrismaService({ appRootDir: rootDir, databasePath } as any);
+  it("更新来源时传入 null 会以稳定错误拒绝清空本地路径", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-null-path-"));
+    const service = new PrismaService({
+      appRootDir: rootDir,
+      databasePath: join(rootDir, "data", "learning-os.db"),
+    } as any);
     await service.onModuleInit();
-
-    const source = await service.source.update({
-      where: { id: "source-clear-path" },
-      data: { localPath: null },
+    const created = await service.source.create({
+      data: {
+        type: "text",
+        title: "来源",
+        localPath: "/tmp/source.txt",
+        contentHash: "hash",
+        status: "stored",
+        content: "内容",
+      },
     });
 
-    expect(source.localPath).toBeUndefined();
+    await expect(
+      service.source.update({ where: { id: created.id }, data: { localPath: null } }),
+    ).rejects.toThrow("source_local_path_required");
     await service.onModuleDestroy();
-    const persisted = new DatabaseSync(databasePath);
-    expect(persisted.prepare("select local_path from sources where id = ?").get("source-clear-path")).toEqual({ local_path: null });
-    persisted.close();
+  });
+
+  it("更新来源时传入空字符串会以稳定错误拒绝清空本地路径", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-empty-path-"));
+    const service = new PrismaService({
+      appRootDir: rootDir,
+      databasePath: join(rootDir, "data", "learning-os.db"),
+    } as any);
+    await service.onModuleInit();
+    const created = await service.source.create({
+      data: {
+        type: "text",
+        title: "来源",
+        localPath: "/tmp/source.txt",
+        contentHash: "hash",
+        status: "stored",
+        content: "内容",
+      },
+    });
+
+    await expect(
+      service.source.update({ where: { id: created.id }, data: { localPath: "" } }),
+    ).rejects.toThrow("source_local_path_required");
+    await service.onModuleDestroy();
+  });
+
+  it("映射来源时保留空字符串本地路径", () => {
+    const service = new PrismaService({} as any);
+
+    const source = (service as any).mapSource({
+      id: "source-empty-path",
+      type: "text",
+      title: "空路径来源",
+      url: null,
+      local_path: "",
+      content_hash: "hash",
+      status: "stored",
+      content: "内容",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+
+    expect(source.localPath).toBe("");
   });
 
   it("事务工作失败时回滚并重新抛出错误", async () => {

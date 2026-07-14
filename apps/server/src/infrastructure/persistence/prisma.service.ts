@@ -53,6 +53,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       if (!current) {
         throw new Error(`source_not_found:${where.id}`);
       }
+      if (data.localPath !== undefined && (typeof data.localPath !== "string" || data.localPath.length === 0)) {
+        throw new Error("source_local_path_required");
+      }
       db.prepare(
         `update sources
          set type = ?, title = ?, url = ?, local_path = ?, content_hash = ?, status = ?, content = ?, updated_at = ?
@@ -676,7 +679,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       type: String(row.type),
       title: String(row.title),
       url: row.url ? String(row.url) : undefined,
-      localPath: row.local_path ? String(row.local_path) : undefined,
+      localPath: row.local_path == null ? undefined : String(row.local_path),
       contentHash: String(row.content_hash),
       status: String(row.status),
       content: String(row.content),

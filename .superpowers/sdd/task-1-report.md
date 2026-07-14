@@ -211,3 +211,48 @@ rtk git diff --check
 - 回归测试直接断言 SQLite 中的 `local_path` 为 SQL `NULL`，并模拟可为空的既有来源记录。
 - 现有新库 DDL 仍将 `sources.local_path` 定义为 `NOT NULL`；本修复保证 `source.update()` 对可为空记录按三态绑定值。若需让新建数据库也接受显式清空，需另行调整该既有表约束及迁移，超出本次限定的 update 语义修复范围。
 - 未修改 `apps/shell/.preload-build/`，也未改变其他字段或 preload 行为。
+
+---
+
+# Task 1 验收修复：来源路径约束与任务会话关联
+
+## 改动
+
+- `PrismaService.source.update()` 现在仅在 `localPath` 为 `undefined` 时保留原值；传入非空字符串时更新路径；传入 `null`、空字符串或非字符串值时，在执行 SQL 前抛出稳定错误 `source_local_path_required`。
+- `mapSource()` 使用 `row.local_path == null` 判断 SQL NULL，因此仅 NULL 映射为 `undefined`，空字符串会被如实映射为 `""`。
+- `IngestionService.createImport()` 保持先创建 `AgentTask` 再创建会话的顺序；会话创建后立即通过 `agentTask.update()` 回填 `sessionId`，后续仍单独更新任务状态。
+- 持久化测试不再构造可空的旧版 `sources` 表来证明清空路径；改为由真实 `PrismaService` 初始化的数据库验证 `null` 和空字符串均被业务错误拒绝。
+
+## RED / GREEN 证据
+
+### RED
+
+先仅增加回归用例后执行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts ingestion.service.spec.ts
+```
+
+结果：4 项新增用例失败，分别确认：
+
+- `localPath: null` 抛出了 SQLite 的 `NOT NULL constraint failed`，而不是稳定业务错误；
+- `localPath: ""` 被错误地接受；
+- `mapSource()` 将空字符串错误映射为 `undefined`；
+- 导入任务的首次 `agentTask.update()` 仅写入 `status: "succeeded"`，未回填 `sessionId`。
+
+### GREEN
+
+实现最小修复后执行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts ingestion.service.spec.ts
+rtk pnpm --filter @learning-os/server lint
+```
+
+结果：服务端 9 个测试文件、21 项测试全部通过；`tsc --noEmit -p tsconfig.json` 通过。
+
+## 约束与顾虑
+
+- 未修改 schema；`sources.local_path` 仍为必填字段。
+- 不再宣称或测试可由真实 schema 创建的 NULL 来源记录可被写回；仍通过映射测试保证 SQL NULL 不会被字符串化，且空字符串不会丢失。
+- 未实现 URL、Markdown 或重试逻辑，未修改 preload。

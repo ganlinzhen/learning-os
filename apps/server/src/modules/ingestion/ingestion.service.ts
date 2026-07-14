@@ -52,6 +52,13 @@ export class IngestionService {
       },
     });
 
+    if (this.prisma.agentTask?.update) {
+      await this.prisma.agentTask.update({
+        where: { id: task.id },
+        data: { sessionId: session.id },
+      });
+    }
+
     const candidateResult = await this.agentClient.generateCandidates({
       title: input.title,
       content: input.content,

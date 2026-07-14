@@ -71,6 +71,10 @@ describe("IngestionService", () => {
         create: vi.fn().mockResolvedValue({ id: "session_1", status: "created" }),
         update: vi.fn().mockResolvedValue({ id: "session_1", status: "reviewable" }),
       },
+      agentTask: {
+        create: vi.fn().mockResolvedValue({ id: "task_1" }),
+        update: vi.fn().mockResolvedValue({ id: "task_1" }),
+      },
       conceptCandidate: { createMany: vi.fn() },
       cardCandidate: { createMany: vi.fn() },
     } as any;
@@ -96,6 +100,10 @@ describe("IngestionService", () => {
     });
 
     expect(result.sessionId).toBe("session_1");
+    expect(prisma.agentTask.update).toHaveBeenNthCalledWith(1, {
+      where: { id: "task_1" },
+      data: { sessionId: "session_1" },
+    });
   });
 
   it("文本导入缺少正文时返回业务错误", async () => {
