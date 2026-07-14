@@ -72,6 +72,12 @@ pnpm rebuild electron
 
 ## 本地启动
 
+### 配置 DeepSeek
+
+Generator 仅使用 DeepSeek 生成候选知识点和复习卡片。首次启动前，复制 `apps/generator/.env.example` 为同目录 `.env`，并在其中填入 `DEEPSEEK_API_KEY`；`.env` 已被 Git 忽略，不要将真实密钥写入示例文件或提交到仓库。
+
+默认使用 `https://api.deepseek.com` 与 `deepseek-v4-flash`。若缺少密钥或模型调用失败，导入会失败并显示错误，不会退回规则生成。
+
 推荐优先使用仓库根目录的 Turbo 聚合命令：
 
 1. 浏览器完整流程：启动 `console + server + generator`

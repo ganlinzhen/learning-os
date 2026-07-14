@@ -1,11 +1,29 @@
-from fastapi import FastAPI
+from typing import Annotated
 
-from learning_os_generator.domain.generation import generate_candidates
+from fastapi import Depends, FastAPI, HTTPException
+
+from learning_os_generator.infrastructure.deepseek import (
+    DeepSeekGenerationError,
+    DeepSeekGenerator,
+    DeepSeekNotConfiguredError,
+)
 from learning_os_generator.schemas.generation import GenerateRequest, GenerateResponse
 
 app = FastAPI(title="Learning OS Generator")
 
 
+def get_generator() -> DeepSeekGenerator:
+    return DeepSeekGenerator.from_environment()
+
+
 @app.post("/generate", response_model=GenerateResponse)
-def generate(request: GenerateRequest) -> GenerateResponse:
-    return generate_candidates(request)
+def generate(
+    request: GenerateRequest,
+    generator: Annotated[DeepSeekGenerator, Depends(get_generator)],
+) -> GenerateResponse:
+    try:
+        return generator.generate(request)
+    except DeepSeekNotConfiguredError as error:
+        raise HTTPException(status_code=503, detail="deepseek_not_configured") from error
+    except DeepSeekGenerationError as error:
+        raise HTTPException(status_code=502, detail="deepseek_generation_failed") from error

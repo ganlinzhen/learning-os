@@ -5,11 +5,13 @@ import { apiClient } from "../../shared/api/api-client";
 export function ImportPage() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     setSubmitting(true);
+    setErrorMessage("");
 
     try {
       const session = await apiClient.createImport({
@@ -18,6 +20,8 @@ export function ImportPage() {
         content: String(formData.get("content") ?? ""),
       });
       navigate(`/ingestions/${session.sessionId}`);
+    } catch {
+      setErrorMessage("整理失败，请检查 DeepSeek 配置或稍后重试。");
     } finally {
       setSubmitting(false);
     }
@@ -27,6 +31,7 @@ export function ImportPage() {
     <main className="page">
       <h1>导入中心</h1>
       <p>先用最小文本导入跑通 Learning OS 的知识整理闭环。</p>
+      {errorMessage ? <p role="alert">{errorMessage}</p> : null}
       <form className="card stack" onSubmit={onSubmit}>
         <label htmlFor="title">标题</label>
         <input id="title" name="title" placeholder="例如：React Server Components" required />
