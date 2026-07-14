@@ -31,6 +31,29 @@ describe("WebContentService", () => {
     });
   });
 
+  it("在选择标题和正文前忽略脚本与注释中的伪标签", async () => {
+    const service = new WebContentService({
+      fetchImpl: vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => "text/html" },
+        text: async () => `
+          <html>
+            <head>
+              <script><title>伪标题</title><article>伪正文</article></script>
+              <!-- <title>注释伪标题</title><article>注释伪正文</article> -->
+              <title>真实标题</title>
+            </head>
+            <body><main><p>真实正文</p></main></body>
+          </html>`,
+      }) as typeof fetch,
+    });
+
+    await expect(service.fetch("https://example.com/script-tags")).resolves.toEqual({
+      title: "真实标题",
+      content: "真实正文",
+    });
+  });
+
   it("拒绝 file URL", async () => {
     const service = new WebContentService({ fetchImpl: vi.fn() as typeof fetch });
 

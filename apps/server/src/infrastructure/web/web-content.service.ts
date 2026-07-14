@@ -50,9 +50,13 @@ export class WebContentService {
       throw new WebContentError("web_fetch_failed");
     }
 
-    const title = this.toText(this.getTagContent(html, "title") ?? "");
+    const contentSource = this.removeNonContentHtml(html);
+    const title = this.toText(this.getTagContent(contentSource, "title") ?? "");
     const contentHtml =
-      this.getTagContent(html, "article") ?? this.getTagContent(html, "main") ?? this.getTagContent(html, "body") ?? "";
+      this.getTagContent(contentSource, "article") ??
+      this.getTagContent(contentSource, "main") ??
+      this.getTagContent(contentSource, "body") ??
+      "";
     const content = this.toText(contentHtml);
 
     if (!title || !content) {
@@ -75,8 +79,14 @@ export class WebContentService {
     return match?.[1];
   }
 
+  private removeNonContentHtml(html: string): string {
+    return html
+      .replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+      .replace(/<!--[\s\S]*?-->/g, "");
+  }
+
   private toText(html: string): string {
-    const withoutNonContent = html.replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "");
+    const withoutNonContent = this.removeNonContentHtml(html);
     const withBlockLines = withoutNonContent
       .replace(/<br\s*\/?\s*>/gi, "\n")
       .replace(/<\/?(address|article|aside|blockquote|body|div|dl|dt|dd|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|td|tfoot|th|thead|tr|ul)\b[^>]*>/gi, "\n");

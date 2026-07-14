@@ -53,3 +53,32 @@ rtk pnpm --filter @learning-os/server lint
 
 - HTML 提取采用无新增依赖的正则实现，适用于简报要求的基础标签和正文选择；若后续需处理严重畸形 HTML、复杂嵌套或更完整的语义抽取，应在产品允许新增依赖时改用专门的 HTML 解析器。
 - 当前按简报只限制 URL 协议。若后续把 URL 导入开放给不可信用户输入，应补充私网、回环、链路本地地址及重定向链路的 SSRF 防护。
+
+## 审查修复：过滤网页脚本伪标签
+
+### RED
+
+新增回归规格：完整 HTML 中先出现的 `script` 和 HTML 注释分别包含伪造的 `title`、`article`，真实 `title` 与 `main` 位于其后。修复前运行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- web-content.service.spec.ts
+```
+
+结果：按预期失败，提取得到“伪标题”和“伪正文”。根因是先用正则选择标签、后在 `toText` 阶段移除非内容段，导致选择器已命中脚本文本。
+
+### GREEN 与验证
+
+新增最小的完整 HTML 预处理：先移除 `script`、`style`、`noscript` 和 HTML 注释原始段，再选择 `title` 及 `article`/`main`/`body`。保留 `toText` 的相同预处理，确保任何传入片段也不会保留这些段。
+
+```bash
+rtk pnpm --filter @learning-os/server test -- web-content.service.spec.ts
+```
+
+结果：11 个测试文件、32 项测试全部通过。
+
+```bash
+rtk pnpm --filter @learning-os/server lint
+rtk git diff --check
+```
+
+结果：均通过。
