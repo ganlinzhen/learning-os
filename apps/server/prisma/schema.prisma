@@ -91,9 +91,24 @@ model Note {
   conceptId String
   title     String
   content   String
+  localPath String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   concept   Concept  @relation(fields: [conceptId], references: [id], onDelete: Cascade)
+}
+
+model AgentTask {
+  id               String   @id @default(cuid())
+  sessionId        String?
+  type             String   @default("ingestion")
+  status           String
+  attemptCount     Int      @default(0)
+  lastErrorCode    String?
+  lastErrorMessage String?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model ReviewCard {

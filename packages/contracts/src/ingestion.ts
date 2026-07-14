@@ -10,6 +10,15 @@ export const ingestionSessionStatuses = [
 
 export type IngestionSessionStatus = (typeof ingestionSessionStatuses)[number];
 
+export interface AgentTaskDto {
+  id: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  attemptCount: number;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+  canRetry: boolean;
+}
+
 export interface CardCandidateDto {
   id: string;
   conceptCandidateId?: string;
@@ -38,12 +47,13 @@ export interface IngestionDetailDto {
   status: IngestionSessionStatus;
   coreConcepts: ConceptCandidateDto[];
   candidateConcepts: ConceptCandidateDto[];
+  task: AgentTaskDto;
 }
 
 export interface CreateImportDto {
   type: "text" | "url" | "markdown";
-  title: string;
-  content: string;
+  title?: string;
+  content?: string;
   url?: string;
 }
 
