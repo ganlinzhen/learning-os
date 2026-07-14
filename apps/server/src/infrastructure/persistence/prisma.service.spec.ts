@@ -66,6 +66,84 @@ describe("PrismaService", () => {
     await service.onModuleDestroy();
   });
 
+  it("更新来源时省略本地路径会保留已有的 NULL", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-null-path-"));
+    const databasePath = join(rootDir, "learning-os.db");
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec(`
+      create table sources (
+        id text primary key,
+        type text not null,
+        title text not null,
+        url text,
+        local_path text,
+        content_hash text not null,
+        status text not null,
+        content text not null,
+        created_at text not null,
+        updated_at text not null
+      );
+      insert into sources values (
+        'source-null-path', 'url', '空路径来源', null, null, 'hash', 'stored', '内容',
+        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+      );
+    `);
+    legacy.close();
+
+    const service = new PrismaService({ appRootDir: rootDir, databasePath } as any);
+    await service.onModuleInit();
+
+    const source = await service.source.update({
+      where: { id: "source-null-path" },
+      data: { title: "更新后的空路径来源" },
+    });
+
+    expect(source.localPath).toBeUndefined();
+    await service.onModuleDestroy();
+    const persisted = new DatabaseSync(databasePath);
+    expect(persisted.prepare("select local_path from sources where id = ?").get("source-null-path")).toEqual({ local_path: null });
+    persisted.close();
+  });
+
+  it("更新来源时传入 null 会清空本地路径", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-clear-path-"));
+    const databasePath = join(rootDir, "learning-os.db");
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec(`
+      create table sources (
+        id text primary key,
+        type text not null,
+        title text not null,
+        url text,
+        local_path text,
+        content_hash text not null,
+        status text not null,
+        content text not null,
+        created_at text not null,
+        updated_at text not null
+      );
+      insert into sources values (
+        'source-clear-path', 'text', '待清空路径的来源', null, '/tmp/source.txt', 'hash', 'stored', '内容',
+        '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+      );
+    `);
+    legacy.close();
+
+    const service = new PrismaService({ appRootDir: rootDir, databasePath } as any);
+    await service.onModuleInit();
+
+    const source = await service.source.update({
+      where: { id: "source-clear-path" },
+      data: { localPath: null },
+    });
+
+    expect(source.localPath).toBeUndefined();
+    await service.onModuleDestroy();
+    const persisted = new DatabaseSync(databasePath);
+    expect(persisted.prepare("select local_path from sources where id = ?").get("source-clear-path")).toEqual({ local_path: null });
+    persisted.close();
+  });
+
   it("事务工作失败时回滚并重新抛出错误", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-transaction-"));
     const service = new PrismaService({

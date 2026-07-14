@@ -172,3 +172,42 @@ rtk git diff --check
 
 - 未修改 `apps/shell/.preload-build/`，未实现 URL 抓取、重试 API 或前端。
 - 未发现本修复范围内的额外顾虑；事务客户端复用现有幂等建表和 notes 列升级逻辑，并在每次事务结束时关闭。
+
+---
+
+# Task 1 最终复核修复：来源空路径语义
+
+## 修复
+
+- `source.update()` 对 `localPath` 采用与 `url` 一致的三态语义：字段为 `undefined` 时保留当前值，字段显式为 `null` 时写入 SQL `NULL`。
+- `mapSource()` 将 SQL `NULL` 映射为 `undefined`，避免向调用方返回字符串 `"null"`。
+
+## RED / GREEN 证据
+
+### RED
+
+新增“保留已有 NULL”与“显式清空路径”两个回归用例后执行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts
+```
+
+结果：新增两项测试失败，分别收到 `"null"` 与原有路径 `/tmp/source.txt`，准确复现缺陷。
+
+### GREEN
+
+完成最小修复后执行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts
+rtk pnpm --filter @learning-os/server lint
+rtk git diff --check
+```
+
+结果：服务端 9 个测试文件、19 项测试全部通过；`tsc --noEmit -p tsconfig.json` 通过；差异检查无空白错误。
+
+## 约束与顾虑
+
+- 回归测试直接断言 SQLite 中的 `local_path` 为 SQL `NULL`，并模拟可为空的既有来源记录。
+- 现有新库 DDL 仍将 `sources.local_path` 定义为 `NOT NULL`；本修复保证 `source.update()` 对可为空记录按三态绑定值。若需让新建数据库也接受显式清空，需另行调整该既有表约束及迁移，超出本次限定的 update 语义修复范围。
+- 未修改 `apps/shell/.preload-build/`，也未改变其他字段或 preload 行为。
