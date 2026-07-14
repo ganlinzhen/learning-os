@@ -6,7 +6,7 @@ describe("ingestion status list", () => {
     expect(ingestionSessionStatuses).toContain("reviewable");
   });
 
-  it("exposes retryable failed agent task in ingestion detail", () => {
+  it("在导入详情中暴露可重试的失败智能体任务", () => {
     const detail: IngestionDetailDto = {
       sessionId: "session-1",
       sourceId: "source-1",

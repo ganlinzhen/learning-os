@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { PrismaService } from "./prisma.service";
 
 describe("PrismaService", () => {
-  it("creates and finds a failed agent task in an isolated sqlite database", async () => {
+  it("在隔离的 SQLite 数据库中创建并查询失败的智能体任务", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-agent-task-"));
     const service = new PrismaService({
       appRootDir: rootDir,
@@ -34,7 +34,7 @@ describe("PrismaService", () => {
     await service.onModuleDestroy();
   });
 
-  it("safely upgrades legacy notes table with local path", async () => {
+  it("安全升级包含本地路径的旧版笔记表", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-legacy-notes-"));
     const databasePath = join(rootDir, "learning-os.db");
     const legacy = new DatabaseSync(databasePath);
@@ -66,7 +66,7 @@ describe("PrismaService", () => {
     await service.onModuleDestroy();
   });
 
-  it("rolls back and rethrows when transaction work fails", async () => {
+  it("事务工作失败时回滚并重新抛出错误", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-transaction-"));
     const service = new PrismaService({
       appRootDir: rootDir,

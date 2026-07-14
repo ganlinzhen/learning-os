@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { IngestionService } from "./ingestion.service";
 
 describe("IngestionService", () => {
-  it("returns the latest failed agent task details and retry eligibility", async () => {
+  it("返回最新失败智能体任务的详情和重试资格", async () => {
     const prisma = {
       ingestionSession: {
         findUnique: vi.fn().mockResolvedValue({
@@ -38,7 +38,7 @@ describe("IngestionService", () => {
     });
   });
 
-  it("returns a non-retryable compatibility task summary for a legacy session", async () => {
+  it("为旧版会话返回不可重试的兼容任务摘要", async () => {
     const prisma = {
       ingestionSession: {
         findUnique: vi.fn().mockResolvedValue({

@@ -106,3 +106,25 @@ rtk pnpm --filter @learning-os/server lint
 
 - 未实现重试接口、前端或 URL 抓取，未修改 `apps/shell/.preload-build/`，也未改动 Task 1 的持久化实现。
 - 兼容摘要的 `id` 使用 `legacy:<sessionId>`，用于满足必填 DTO 并明确其并非真实持久化任务；其 `canRetry` 固定为 `false`。
+
+---
+
+# Task 1 审查修复：测试文案汉化
+
+## 修复
+
+- 将新增的持久化、导入服务和导入契约测试用例标题统一改为简体中文；未改变测试逻辑、断言或其他既有用例文案。
+- 未修改 `apps/shell/.preload-build/`。
+
+## 验证
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts ingestion.service.spec.ts
+rtk pnpm --filter @learning-os/contracts exec vitest run src/ingestion.spec.ts
+```
+
+结果：服务端 9 个测试文件、14 项测试均通过；契约 `src/ingestion.spec.ts` 2 项测试均通过。
+
+## 顾虑
+
+- 无新增顾虑；工作区中其余未提交改动未纳入本次提交。
