@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { BadRequestException } from "@nestjs/common";
 import { IngestionService } from "./ingestion.service";
 
 describe("IngestionService", () => {
@@ -95,5 +96,35 @@ describe("IngestionService", () => {
     });
 
     expect(result.sessionId).toBe("session_1");
+  });
+
+  it("文本导入缺少正文时返回业务错误", async () => {
+    const service = new IngestionService(
+      {} as any,
+      { saveSourceContent: vi.fn() } as any,
+      {} as any,
+    );
+
+    await expect(
+      service.createImport({
+        type: "text",
+        title: "缺少正文的文本",
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("URL 导入在当前入口返回业务错误", async () => {
+    const service = new IngestionService(
+      {} as any,
+      { saveSourceContent: vi.fn() } as any,
+      {} as any,
+    );
+
+    await expect(
+      service.createImport({
+        type: "url",
+        url: "https://example.com",
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 });

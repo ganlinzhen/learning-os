@@ -99,6 +99,73 @@ describe("PrismaService", () => {
     await service.onModuleDestroy();
   });
 
+  it("事务回滚不会吞掉原服务在并发期间成功写入的数据", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-transaction-isolation-"));
+    const service = new PrismaService({
+      appRootDir: rootDir,
+      databasePath: join(rootDir, "data", "learning-os.db"),
+    } as any);
+    await service.onModuleInit();
+
+    let allowRollback!: () => void;
+    const rollbackGate = new Promise<void>((resolve) => {
+      allowRollback = resolve;
+    });
+    let transactionStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      transactionStarted = resolve;
+    });
+    const transaction = service.transaction(async (prisma) => {
+      await prisma.source.create({
+        data: {
+          type: "text",
+          title: "事务内来源",
+          localPath: "/tmp/transaction-inner.txt",
+          contentHash: "transaction-inner-hash",
+          status: "stored",
+          content: "事务内内容",
+        },
+      });
+      transactionStarted();
+      await rollbackGate;
+      throw new Error("transaction_failed");
+    });
+    await started;
+
+    let externalSessionId: string | undefined;
+    let externalWriteError: unknown;
+    try {
+      const source = await service.source.create({
+        data: {
+          type: "text",
+          title: "事务外来源",
+          localPath: "/tmp/transaction-outer.txt",
+          contentHash: "transaction-outer-hash",
+          status: "stored",
+          content: "事务外内容",
+        },
+      });
+      const session = await service.ingestionSession.create({
+        data: { sourceId: source.id, status: "created" },
+      });
+      externalSessionId = session.id;
+    } catch (error) {
+      externalWriteError = error;
+    }
+
+    allowRollback();
+    await expect(transaction).rejects.toThrow("transaction_failed");
+
+    if (externalSessionId) {
+      await expect(service.ingestionSession.findUnique({ where: { id: externalSessionId } })).resolves.toMatchObject({
+        id: externalSessionId,
+      });
+    } else {
+      expect(externalWriteError).toBeDefined();
+    }
+    await service.onModuleDestroy();
+  });
+
   it("persists records in a real sqlite database file across service instances", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-sqlite-"));
     const databasePath = join(rootDir, "data", "learning-os.db");

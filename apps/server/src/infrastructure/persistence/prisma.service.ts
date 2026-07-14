@@ -498,19 +498,24 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   };
 
   async transaction<T>(work: (prisma: this) => Promise<T> | T): Promise<T> {
-    const db = await this.getDb();
-    db.exec("begin");
+    const transactionClient = new PrismaService(this.config);
+    let transactionDb: DatabaseSync | undefined;
     try {
-      const result = await work(this);
-      db.exec("commit");
+      await transactionClient.onModuleInit();
+      transactionDb = await transactionClient.getDb();
+      transactionDb.exec("begin immediate");
+      const result = await work(transactionClient as this);
+      transactionDb.exec("commit");
       return result;
     } catch (error) {
       try {
-        db.exec("rollback");
+        transactionDb?.exec("rollback");
       } catch {
         // 保留原始回调异常。
       }
       throw error;
+    } finally {
+      await transactionClient.onModuleDestroy();
     }
   }
 

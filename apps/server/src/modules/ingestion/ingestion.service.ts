@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { ConfirmIngestionDto, CreateImportDto, IngestionDetailDto } from "@learning-os/contracts";
 import { AgentClientService } from "../../infrastructure/agent/agent-client.service";
 import { PrismaService } from "../../infrastructure/persistence/prisma.service";
@@ -13,6 +13,18 @@ export class IngestionService {
   ) {}
 
   async createImport(input: CreateImportDto) {
+    if (input.type !== "text") {
+      throw new BadRequestException(`当前入口暂不支持 ${input.type} 导入`);
+    }
+    if (
+      typeof input.title !== "string" ||
+      input.title.trim().length === 0 ||
+      typeof input.content !== "string" ||
+      input.content.trim().length === 0
+    ) {
+      throw new BadRequestException("文本导入必须提供非空标题和正文");
+    }
+
     const stored = await this.storageService.saveSourceContent(input);
     const source = await this.prisma.source.create({
       data: {

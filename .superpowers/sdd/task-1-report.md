@@ -128,3 +128,47 @@ rtk pnpm --filter @learning-os/contracts exec vitest run src/ingestion.spec.ts
 ## 顾虑
 
 - 无新增顾虑；工作区中其余未提交改动未纳入本次提交。
+
+---
+
+# Task 1 重审修复：事务隔离与同步导入输入校验
+
+## 修复
+
+- `PrismaService.transaction()` 现在为每个事务创建并初始化独立的 `PrismaService` 连接，在该连接上执行 `BEGIN IMMEDIATE`，仅将该事务客户端交给回调；提交或回滚后在 `finally` 中关闭客户端连接。共享服务连接不再进入事务。
+- `IngestionService.createImport()` 在入口处仅接受 `text`：`title` 与 `content` 必须是去除空白后仍非空的字符串；`url`、`markdown` 等未实现类型直接返回 `BadRequestException`，不会再把不完整输入传给存储层。
+
+## RED / GREEN 证据
+
+### RED
+
+先新增并发事务测试和两个导入服务校验测试，执行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts ingestion.service.spec.ts
+```
+
+结果：3 项新增测试失败。共享连接的事务在回滚后使事务外已成功创建的会话查询为 `null`；缺正文和 URL 输入则在后续流程触发 `TypeError`，而非 `BadRequestException`。
+
+### GREEN
+
+完成最小修复后执行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts ingestion.service.spec.ts
+rtk pnpm --filter @learning-os/server lint
+rtk git diff --check
+```
+
+结果：9 个测试文件、17 项测试全部通过；`tsc --noEmit -p tsconfig.json` 通过；差异检查无空白错误。
+
+## 覆盖范围
+
+- 并发测试在事务内写入并暂停时，尝试使用原服务连接写入：若写入成功，事务回滚后该会话仍必须存在；若 SQLite 写锁阻止写入，则断言该写入没有成功返回。
+- 原有事务失败用例继续验证事务客户端中创建的会话在回滚后不可见。
+- 服务测试覆盖缺少文本正文与 URL 导入均返回业务异常；实现同样拒绝尚未实现的 markdown 类型。
+
+## 约束与顾虑
+
+- 未修改 `apps/shell/.preload-build/`，未实现 URL 抓取、重试 API 或前端。
+- 未发现本修复范围内的额外顾虑；事务客户端复用现有幂等建表和 notes 列升级逻辑，并在每次事务结束时关闭。
