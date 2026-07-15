@@ -25,6 +25,7 @@ type ResolveRuntimePathsInput = {
 export function resolveRuntimePaths(input: ResolveRuntimePathsInput): RuntimePaths {
   const dataRootDir = join(input.userDataPath, "runtime");
   const logDir = join(input.userDataPath, "logs");
+  const llmConfigPath = join(dataRootDir, "settings", "llm.json");
 
   if (!input.isPackaged) {
     return {
@@ -35,7 +36,7 @@ export function resolveRuntimePaths(input: ResolveRuntimePathsInput): RuntimePat
         command: "node",
         args: ["apps/server/dist-prod/apps/server/src/main.js"],
         cwd: process.cwd(),
-        env: {},
+        env: { LEARNING_OS_LLM_CONFIG_PATH: llmConfigPath },
       },
       generatorCommand: {
         command: "python3.11",
@@ -51,7 +52,7 @@ export function resolveRuntimePaths(input: ResolveRuntimePathsInput): RuntimePat
           "8000",
         ],
         cwd: process.cwd(),
-        env: {},
+        env: { LEARNING_OS_LLM_CONFIG_PATH: llmConfigPath },
       },
     };
   }
@@ -66,13 +67,13 @@ export function resolveRuntimePaths(input: ResolveRuntimePathsInput): RuntimePat
       command: "node",
       args: [join(resourcesDir, "server", "dist-prod", "apps", "server", "src", "main.js")],
       cwd: join(resourcesDir, "server", "dist-prod"),
-      env: {},
+      env: { LEARNING_OS_LLM_CONFIG_PATH: llmConfigPath },
     },
     generatorCommand: {
       command: join(resourcesDir, "generator", "learning-os-generator"),
       args: [],
       cwd: join(resourcesDir, "generator"),
-      env: {},
+      env: { LEARNING_OS_LLM_CONFIG_PATH: llmConfigPath },
     },
   };
 }

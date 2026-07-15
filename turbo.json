@@ -32,7 +32,10 @@
     },
     "dev:server": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "LEARNING_OS_LLM_CONFIG_PATH"
+      ]
     },
     "dev:shell": {
       "cache": false,
@@ -40,7 +43,10 @@
     },
     "//#dev:generator": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "LEARNING_OS_LLM_CONFIG_PATH"
+      ]
     }
   }
 }
