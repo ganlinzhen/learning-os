@@ -22,7 +22,7 @@ export class AgentClientService {
   }
 
   async generateCandidates(input: { title: string; content: string }) {
-    const url = this.resolvedBaseUrl ?? this.appConfig?.agentBaseUrl ?? "http://127.0.0.1:8000";
+    const url = this.getBaseUrl();
     const response = await this.fetchImpl(`${url}/generate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -34,5 +34,17 @@ export class AgentClientService {
     }
 
     return response.json();
+  }
+
+  async testLlmConnection(): Promise<void> {
+    const response = await this.fetchImpl(`${this.getBaseUrl()}/test-connection`, { method: "POST" });
+
+    if (!response.ok) {
+      throw new Error("agent_request_failed");
+    }
+  }
+
+  private getBaseUrl(): string {
+    return this.resolvedBaseUrl ?? this.appConfig?.agentBaseUrl ?? "http://127.0.0.1:8000";
   }
 }

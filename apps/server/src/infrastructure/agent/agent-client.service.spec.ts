@@ -18,4 +18,16 @@ describe("AgentClientService", () => {
     const result = await service.generateCandidates({ title: "RSC", content: "body" });
     expect(result.coreConcepts[0].title).toBe("RSC");
   });
+
+  it("posts connection tests to the resolved generator endpoint without a body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    const service = new AgentClientService(undefined, {
+      fetchImpl: fetchMock as any,
+      baseUrl: "http://127.0.0.1:8000",
+    });
+
+    await service.testLlmConnection();
+
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:8000/test-connection", { method: "POST" });
+  });
 });

@@ -8,9 +8,10 @@ import { IngestionModule } from "../modules/ingestion/ingestion.module";
 import { LibraryModule } from "../modules/library/library.module";
 import { ReviewModule } from "../modules/review/review.module";
 import { SearchModule } from "../modules/search/search.module";
+import { SettingsModule } from "../modules/settings/settings.module";
 
 @Module({
-  imports: [IngestionModule, LibraryModule, ReviewModule, SearchModule],
+  imports: [IngestionModule, LibraryModule, ReviewModule, SearchModule, SettingsModule],
   controllers: [HealthController],
   providers: [AppConfigService, PrismaService, StorageService, AgentClientService],
 })
