@@ -1,4 +1,4 @@
-import { BadGatewayException, Body, Controller, Delete, Get, Inject, Post, Put } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, Body, Controller, Delete, Get, Inject, Post, Put } from "@nestjs/common";
 import { UpdateLlmSettingsDto } from "@learning-os/contracts";
 import { AgentClientService } from "../../infrastructure/agent/agent-client.service";
 import { LlmSettingsService } from "./llm-settings.service";
@@ -17,11 +17,13 @@ export class SettingsController {
 
   @Put("llm")
   updateLlmSettings(@Body() input: UpdateLlmSettingsDto) {
+    this.validateLlmSettingsInput(input);
     return this.service.save(input);
   }
 
   @Post("llm/test")
   async testLlmSettings(@Body() input: UpdateLlmSettingsDto) {
+    this.validateLlmSettingsInput(input);
     const settings = await this.service.save(input);
 
     try {
@@ -36,5 +38,11 @@ export class SettingsController {
   @Delete("llm/api-key")
   clearLlmApiKey() {
     return this.service.clearApiKey();
+  }
+
+  private validateLlmSettingsInput(input: unknown): asserts input is UpdateLlmSettingsDto {
+    if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length === 0) {
+      throw new BadRequestException("LLM 设置请求体必须是非空对象");
+    }
   }
 }

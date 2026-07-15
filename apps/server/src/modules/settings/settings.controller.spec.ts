@@ -63,6 +63,17 @@ describe("SettingsController", () => {
     expect(agent.testLlmConnection).not.toHaveBeenCalled();
   });
 
+  it.each([undefined, null])("拒绝 PUT 与 POST 的空请求体：%s", async (input) => {
+    const { controller, service, agent } = createController();
+    const expectedError = new BadRequestException("LLM 设置请求体必须是非空对象");
+
+    expect(() => controller.updateLlmSettings(input as any)).toThrow(expectedError);
+    await expect(controller.testLlmSettings(input as any)).rejects.toEqual(expectedError);
+
+    expect(service.save).not.toHaveBeenCalled();
+    expect(agent.testLlmConnection).not.toHaveBeenCalled();
+  });
+
   it("连接测试失败时返回稳定的网关异常", async () => {
     const { controller, agent } = createController();
     agent.testLlmConnection.mockRejectedValueOnce(new Error("agent_request_failed"));
