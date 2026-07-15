@@ -1,7 +1,7 @@
 import { Inject, Injectable, Optional } from "@nestjs/common";
-import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { AppConfigService } from "../config/app-config.service";
 import { WebContentError, WebContentService } from "../web/web-content.service";
 
@@ -49,6 +49,22 @@ export class StorageService {
     await writeFile(localPath, input.content, "utf8");
     const contentHash = createHash("sha256").update(input.content).digest("hex");
     return { localPath, contentHash };
+  }
+
+  async replaceSourceContent(input: { localPath: string; content: string }) {
+    const temporaryPath = join(
+      dirname(input.localPath),
+      `.${basename(input.localPath)}.${randomUUID()}.tmp`,
+    );
+    try {
+      await writeFile(temporaryPath, input.content, "utf8");
+      await rename(temporaryPath, input.localPath);
+    } catch (error) {
+      await unlink(temporaryPath).catch(() => undefined);
+      throw error;
+    }
+    const contentHash = createHash("sha256").update(input.content).digest("hex");
+    return { localPath: input.localPath, contentHash };
   }
 
   private getMarkdownTitle(content: string): string | undefined {

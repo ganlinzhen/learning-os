@@ -10,6 +10,7 @@ type ImportSource = {
   title: string;
   content: string;
   url?: string;
+  localPath: string;
 };
 
 @Injectable()
@@ -60,25 +61,20 @@ export class IngestionService {
   }
 
   async runImportTask(sessionId: string): Promise<void> {
-    let taskId: string | undefined;
-    try {
-      const session = await this.prisma.ingestionSession.findUnique({
-        where: { id: sessionId },
-        include: { source: true },
-      });
-      taskId = session?.latestAgentTaskId;
-      if (!session?.source || !taskId) {
-        throw new Error("ingestion_task_not_found");
-      }
-      const task = await this.prisma.agentTask.findUnique({ where: { id: taskId } });
-      if (!task) {
-        throw new Error("ingestion_task_not_found");
-      }
+    const session = await this.prisma.ingestionSession.findUnique({
+      where: { id: sessionId },
+      include: { source: true },
+    });
+    const taskId = session?.latestAgentTaskId;
+    if (!session?.source || !taskId) {
+      return;
+    }
+    const claimedTask = await this.prisma.claimPendingIngestionTask(taskId);
+    if (!claimedTask) {
+      return;
+    }
 
-      await this.prisma.agentTask.update({
-        where: { id: taskId },
-        data: { status: "running", startedAt: new Date() },
-      });
+    try {
       const source = session.source as ImportSource;
       const resolved = await this.storageService.resolveImportContent({
         type: source.type,
@@ -86,9 +82,8 @@ export class IngestionService {
         content: source.content,
         url: source.url,
       });
-      const stored = await this.storageService.saveSourceContent({
-        type: source.type,
-        title: resolved.title,
+      const stored = await this.storageService.replaceSourceContent({
+        localPath: source.localPath,
         content: resolved.content,
       });
       await this.prisma.source.update({
@@ -98,7 +93,7 @@ export class IngestionService {
           title: resolved.title,
           content: resolved.content,
           url: resolved.url,
-          localPath: stored.localPath,
+          localPath: source.localPath,
           contentHash: stored.contentHash,
           status: "stored",
         },
@@ -126,19 +121,17 @@ export class IngestionService {
       });
     } catch (error) {
       const normalized = this.normalizeImportError(error);
-      if (taskId) {
-        await this.prisma.agentTask
-          .update({
-            where: { id: taskId },
-            data: {
-              status: "failed",
-              finishedAt: new Date(),
-              lastErrorCode: normalized.code,
-              lastErrorMessage: normalized.message,
-            },
-          })
-          .catch(() => undefined);
-      }
+      await this.prisma.agentTask
+        .update({
+          where: { id: taskId },
+          data: {
+            status: "failed",
+            finishedAt: new Date(),
+            lastErrorCode: normalized.code,
+            lastErrorMessage: normalized.message,
+          },
+        })
+        .catch(() => undefined);
       await this.prisma.ingestionSession
         .update({ where: { id: sessionId }, data: { status: "failed" } })
         .catch(() => undefined);
@@ -146,29 +139,10 @@ export class IngestionService {
   }
 
   async retryIngestion(sessionId: string) {
-    const session = await this.prisma.ingestionSession.findUnique({ where: { id: sessionId } });
-    const task = session?.latestAgentTaskId
-      ? await this.prisma.agentTask.findUnique({ where: { id: session.latestAgentTaskId } })
-      : null;
-    if (session?.status !== "failed" || task?.status !== "failed") {
+    const task = await this.prisma.claimFailedIngestionRetry(sessionId);
+    if (!task) {
       throw new BadRequestException("仅失败的导入任务可以重试");
     }
-
-    await this.prisma.agentTask.update({
-      where: { id: task.id },
-      data: {
-        status: "pending",
-        attemptCount: task.attemptCount + 1,
-        lastErrorCode: null,
-        lastErrorMessage: null,
-        startedAt: null,
-        finishedAt: null,
-      },
-    });
-    await this.prisma.ingestionSession.update({
-      where: { id: sessionId },
-      data: { status: "processing" },
-    });
     this.scheduleImportTask(sessionId);
     return { sessionId, status: "processing" as const };
   }

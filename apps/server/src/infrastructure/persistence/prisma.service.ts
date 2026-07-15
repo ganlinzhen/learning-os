@@ -507,6 +507,81 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     },
   };
 
+  async claimPendingIngestionTask(taskId: string) {
+    const db = await this.getDb();
+    const now = new Date().toISOString();
+    const row = db
+      .prepare(
+        `update agent_tasks
+         set status = 'running', started_at = ?, updated_at = ?
+         where id = ? and status = 'pending'
+         returning *`,
+      )
+      .get(now, now, taskId) as QueryRow | undefined;
+    return row ? this.mapAgentTask(row) : null;
+  }
+
+  async claimFailedIngestionRetry(sessionId: string) {
+    const db = await this.getDb();
+    let transactionStarted = false;
+    try {
+      db.exec("begin immediate");
+      transactionStarted = true;
+      const task = db
+        .prepare(
+          `select task.*
+           from ingestion_sessions session
+           join agent_tasks task on task.id = session.latest_agent_task_id
+           where session.id = ?
+             and session.status = 'failed'
+             and task.status = 'failed'`,
+        )
+        .get(sessionId) as QueryRow | undefined;
+      if (!task) {
+        db.exec("rollback");
+        transactionStarted = false;
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      const taskUpdate = db
+        .prepare(
+          `update agent_tasks
+           set status = 'pending', attempt_count = attempt_count + 1,
+               last_error_code = null, last_error_message = null,
+               started_at = null, finished_at = null, updated_at = ?
+           where id = ? and status = 'failed'`,
+        )
+        .run(now, String(task.id));
+      const sessionUpdate = db
+        .prepare(
+          `update ingestion_sessions
+           set status = 'processing', updated_at = ?
+           where id = ? and status = 'failed' and latest_agent_task_id = ?`,
+        )
+        .run(now, sessionId, String(task.id));
+      if (Number(taskUpdate.changes) !== 1 || Number(sessionUpdate.changes) !== 1) {
+        db.exec("rollback");
+        transactionStarted = false;
+        return null;
+      }
+
+      const updatedTask = db.prepare("select * from agent_tasks where id = ?").get(String(task.id)) as QueryRow;
+      db.exec("commit");
+      transactionStarted = false;
+      return this.mapAgentTask(updatedTask);
+    } catch (error) {
+      if (transactionStarted) {
+        try {
+          db.exec("rollback");
+        } catch {
+          // 保留原始事务异常。
+        }
+      }
+      throw error;
+    }
+  }
+
   async transaction<T>(work: (prisma: this) => Promise<T> | T): Promise<T> {
     const transactionClient = new PrismaService(this.config);
     let transactionDb: DatabaseSync | undefined;

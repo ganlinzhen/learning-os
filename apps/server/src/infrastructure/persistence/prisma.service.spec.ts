@@ -6,6 +6,102 @@ import { describe, expect, it } from "vitest";
 import { PrismaService } from "./prisma.service";
 
 describe("PrismaService", () => {
+  it("两个 SQLite 连接竞争 pending 任务时仅一个能原子抢占为 running", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-task-claim-"));
+    const config = {
+      appRootDir: rootDir,
+      databasePath: join(rootDir, "data", "learning-os.db"),
+    } as any;
+    const first = new PrismaService(config);
+    const second = new PrismaService(config);
+    await first.onModuleInit();
+    await second.onModuleInit();
+    const task = await first.agentTask.create({
+      data: { type: "ingestion", status: "pending", attemptCount: 1 },
+    });
+
+    const claims = await Promise.all([
+      first.claimPendingIngestionTask(task.id),
+      second.claimPendingIngestionTask(task.id),
+    ]);
+
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.find(Boolean)).toMatchObject({ id: task.id, status: "running", attemptCount: 1 });
+    await expect(first.claimPendingIngestionTask(task.id)).resolves.toBeNull();
+    await expect(first.agentTask.findUnique({ where: { id: task.id } })).resolves.toMatchObject({
+      status: "running",
+      startedAt: expect.any(String),
+    });
+    await first.onModuleDestroy();
+    await second.onModuleDestroy();
+  });
+
+  it("两个 SQLite 连接竞争失败重试时仅一个能原子更新会话和任务", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-retry-claim-"));
+    const config = {
+      appRootDir: rootDir,
+      databasePath: join(rootDir, "data", "learning-os.db"),
+    } as any;
+    const first = new PrismaService(config);
+    const second = new PrismaService(config);
+    await first.onModuleInit();
+    await second.onModuleInit();
+    const source = await first.source.create({
+      data: {
+        type: "url",
+        title: "失败来源",
+        url: "https://example.com",
+        localPath: "/tmp/failed-source.txt",
+        contentHash: "failed-hash",
+        status: "stored",
+        content: "",
+      },
+    });
+    const task = await first.agentTask.create({
+      data: {
+        type: "ingestion",
+        status: "failed",
+        attemptCount: 1,
+        lastErrorCode: "web_fetch_failed",
+        lastErrorMessage: "无法获取网页内容",
+        startedAt: new Date("2026-07-15T00:00:00.000Z"),
+        finishedAt: new Date("2026-07-15T00:01:00.000Z"),
+      },
+    });
+    const session = await first.ingestionSession.create({
+      data: {
+        sourceId: source.id,
+        status: "failed",
+        latestAgentTaskId: task.id,
+      },
+    });
+    await first.agentTask.update({ where: { id: task.id }, data: { sessionId: session.id } });
+
+    const claims = await Promise.all([
+      first.claimFailedIngestionRetry(session.id),
+      second.claimFailedIngestionRetry(session.id),
+    ]);
+
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.find(Boolean)).toMatchObject({
+      id: task.id,
+      sessionId: session.id,
+      status: "pending",
+      attemptCount: 2,
+      lastErrorCode: undefined,
+      lastErrorMessage: undefined,
+      startedAt: undefined,
+      finishedAt: undefined,
+    });
+    await expect(first.claimFailedIngestionRetry(session.id)).resolves.toBeNull();
+    await expect(first.ingestionSession.findUnique({ where: { id: session.id } })).resolves.toMatchObject({
+      status: "processing",
+      latestAgentTaskId: task.id,
+    });
+    await first.onModuleDestroy();
+    await second.onModuleDestroy();
+  });
+
   it("按会话清除旧卡片候选", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-card-candidate-delete-"));
     const service = new PrismaService({

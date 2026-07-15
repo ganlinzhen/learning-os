@@ -73,3 +73,46 @@ rtk pnpm --filter @learning-os/server lint
 
 - `queueMicrotask` 是进程内调度；若服务在微任务执行前退出，pending/running 任务不会自动恢复。当前需求明确禁止自动重试，因此本任务未增加启动恢复机制。
 - 候选替换由多次 SQLite 写入组成而非单一事务；中途写入失败时会落为 failed，用户手动重试会再次清理并重建候选。若后续要求强原子性，应单独设计事务边界。
+
+## 审查修复：原子抢占与来源文件复用
+
+### 结果
+
+- 持久化层新增 `claimPendingIngestionTask`，通过单条 SQLite `UPDATE ... WHERE status = 'pending' RETURNING` 原子抢占任务；抢占失败返回 `null`，`runImportTask` 立即结束，不再重复解析、生成候选或更新状态。
+- 持久化层新增 `claimFailedIngestionRetry`：先取得数据库连接，再在一个同步、无 `await` 的 `BEGIN IMMEDIATE` 事务中校验 failed 会话、latest task 关联与 failed 任务；成功时原子推进会话和任务、增加 attemptCount 并清除错误与时间，条件不满足时回滚并返回 `null`。
+- `retryIngestion` 只消费原子 claim 结果：失败继续抛既有中文 `BadRequestException`，成功者才调度后台任务，双击不会重复增加尝试次数或重复执行。
+- `StorageService.replaceSourceContent` 使用目标文件同目录的随机临时文件写入，再通过 `rename` 原子替换；成功后路径保持不变并返回新 SHA-256，失败时清理临时文件。
+- `createImport` 仍仅首次调用 `saveSourceContent`。`runImportTask` 对 text、url、markdown 统一在已有 `localPath` 上替换，成功和重试都不再创建第二个来源文件；替换失败不会调用 `source.update`。
+
+### TDD 证据
+
+RED 命令：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- ingestion.service.spec.ts retry-ingestion.spec.ts confirm-ingestion.spec.ts storage.service.spec.ts prisma.service.spec.ts
+```
+
+首次结果为 9 个预期失败、39 个通过；补充“文件替换失败不更新数据库”用例后为 10 个预期失败、39 个通过。失败分别证明：
+
+- 两个 SQLite CAS/事务 claim 方法尚不存在。
+- Storage 原路径替换和失败清理方法尚不存在。
+- `runImportTask` 未原子抢占且仍调用 `saveSourceContent` 新建文件。
+- 重复 run 会重复处理，双击 retry 会有两个请求同时成功并调度。
+- 文件替换失败路径没有被执行，无法保证数据库不更新。
+
+最小实现后的 GREEN 结果为 12 个测试文件全部通过，49/49 测试通过。
+
+### 新增覆盖
+
+- 两个真实 `PrismaService`/SQLite 连接竞争同一个 pending 任务，只有一个返回 running；再次 claim 返回 `null`。
+- 两个真实 SQLite 连接竞争同一个 failed 会话，只有一个事务返回 pending 任务；最终会话为 processing、attemptCount 仅增加一次、错误与时间清空。
+- 服务层重复调用 `runImportTask` 只解析和生成一次；双击 `retryIngestion` 只有一次成功和一次调度。
+- 真实文件系统验证替换后路径不变、目录只有原来源文件、新正文与哈希正确；替换失败后临时文件被清理且目标内容不受影响。
+- 服务层验证成功与重试均不调用 `saveSourceContent`，并验证原子替换失败时不更新 Source 数据库记录。
+
+### 自审与顾虑
+
+- retry 的 `BEGIN IMMEDIATE` 事务体仅包含同步 SQLite 语句，没有复用允许异步回调交错的通用 `transaction` 方法。
+- CAS/事务边界都位于持久化层，内存中没有新增 Set 或锁；多服务实例共享 SQLite 文件时仍由数据库决定唯一抢占者。
+- 原子替换保证写入失败不会留下临时文件；若文件替换成功后数据库本身写入失败，文件内容与 Source 行可能暂时不一致，当前任务只要求“替换失败不更新 DB”，未扩展为跨文件系统与 SQLite 的分布式事务。
+- 主任务将在提交后统一安排独立只读审查；本子任务曾按技能尝试派发 reviewer，但受 agent thread 数量限制未创建新线程。

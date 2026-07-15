@@ -1,7 +1,49 @@
+import { mkdtempSync } from "node:fs";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { StorageService } from "./storage.service";
 
 describe("StorageService", () => {
+  it("在原路径原子替换来源正文且不产生第二个来源文件", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-replace-"));
+    const service = new StorageService({ appRootDir: rootDir } as any, { fetch: vi.fn() } as any);
+    const stored = await service.saveSourceContent({
+      type: "text",
+      title: "原始来源",
+      content: "原始正文",
+    });
+
+    const replaced = await service.replaceSourceContent({
+      localPath: stored.localPath,
+      content: "解析后的正文",
+    });
+
+    expect(replaced).toEqual({
+      localPath: stored.localPath,
+      contentHash: "8a8bad52eb2e9bffc0ce4041fe9e71de56e5d9bfa16d21e18053b0c60763238d",
+    });
+    await expect(readFile(stored.localPath, "utf8")).resolves.toBe("解析后的正文");
+    await expect(readdir(join(rootDir, "sources"))).resolves.toEqual([basename(stored.localPath)]);
+  });
+
+  it("原子替换失败时清理同目录临时文件", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-replace-failure-"));
+    const sourceDir = join(rootDir, "sources");
+    const targetDirectory = join(sourceDir, "existing-directory");
+    await mkdir(targetDirectory, { recursive: true });
+    await writeFile(join(targetDirectory, "keep.txt"), "保留", "utf8");
+    const service = new StorageService({ appRootDir: rootDir } as any, { fetch: vi.fn() } as any);
+
+    await expect(
+      service.replaceSourceContent({ localPath: targetDirectory, content: "无法替换" }),
+    ).rejects.toBeDefined();
+
+    await expect(readdir(sourceDir)).resolves.toEqual(["existing-directory"]);
+    await expect(readFile(join(targetDirectory, "keep.txt"), "utf8")).resolves.toBe("保留");
+  });
+
   it("缺少网页地址时返回稳定错误码", async () => {
     const service = new StorageService(
       { appRootDir: "/tmp/learning-os" } as any,
