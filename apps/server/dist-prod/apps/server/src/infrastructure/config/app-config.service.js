@@ -15,6 +15,8 @@ let AppConfigService = class AppConfigService {
     agentBaseUrl = process.env.LEARNING_OS_AGENT_URL ?? "http://127.0.0.1:8000";
     databasePath = process.env.LEARNING_OS_DB_PATH ?? (0, node_path_1.join)(this.appRootDir, "data", "learning-os.db");
     databaseUrl = process.env.DATABASE_URL ?? `file:${this.databasePath}`;
+    llmConfigPath = process.env.LEARNING_OS_LLM_CONFIG_PATH ?? (0, node_path_1.join)(this.appRootDir, "settings", "llm.json");
+    apiToken = process.env.LEARNING_OS_API_TOKEN;
 };
 exports.AppConfigService = AppConfigService;
 exports.AppConfigService = AppConfigService = __decorate([

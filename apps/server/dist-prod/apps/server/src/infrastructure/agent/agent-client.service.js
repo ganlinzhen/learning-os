@@ -12,9 +12,18 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AgentClientService = void 0;
+exports.AgentClientService = exports.AgentLlmConnectionError = void 0;
 const common_1 = require("@nestjs/common");
 const app_config_service_1 = require("../config/app-config.service");
+class AgentLlmConnectionError extends Error {
+    code;
+    constructor(code) {
+        super(code);
+        this.code = code;
+        this.name = "AgentLlmConnectionError";
+    }
+}
+exports.AgentLlmConnectionError = AgentLlmConnectionError;
 let AgentClientService = class AgentClientService {
     fetchImpl;
     resolvedBaseUrl;
@@ -25,7 +34,7 @@ let AgentClientService = class AgentClientService {
         this.resolvedBaseUrl = options?.baseUrl;
     }
     async generateCandidates(input) {
-        const url = this.resolvedBaseUrl ?? this.appConfig?.agentBaseUrl ?? "http://127.0.0.1:8000";
+        const url = this.getBaseUrl();
         const response = await this.fetchImpl(`${url}/generate`, {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -35,6 +44,24 @@ let AgentClientService = class AgentClientService {
             throw new Error("agent_request_failed");
         }
         return response.json();
+    }
+    async testLlmConnection() {
+        const response = await this.fetchImpl(`${this.getBaseUrl()}/test-connection`, { method: "POST" });
+        if (!response.ok) {
+            throw new AgentLlmConnectionError(await this.getErrorCode(response));
+        }
+    }
+    async getErrorCode(response) {
+        try {
+            const body = await response.json();
+            return typeof body.detail === "string" ? body.detail : "agent_request_failed";
+        }
+        catch {
+            return "agent_request_failed";
+        }
+    }
+    getBaseUrl() {
+        return this.resolvedBaseUrl ?? this.appConfig?.agentBaseUrl ?? "http://127.0.0.1:8000";
     }
 };
 exports.AgentClientService = AgentClientService;

@@ -28,6 +28,9 @@ let IngestionController = class IngestionController {
     getIngestionDetail(sessionId) {
         return this.service.getIngestionDetail(sessionId);
     }
+    retryIngestion(sessionId) {
+        return this.service.retryIngestion(sessionId);
+    }
     confirmIngestion(sessionId, input) {
         return this.service.confirmIngestion(sessionId, input);
     }
@@ -47,6 +50,13 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], IngestionController.prototype, "getIngestionDetail", null);
+__decorate([
+    (0, common_1.Post)(":sessionId/retry"),
+    __param(0, (0, common_1.Param)("sessionId")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], IngestionController.prototype, "retryIngestion", null);
 __decorate([
     (0, common_1.Post)(":sessionId/confirm"),
     __param(0, (0, common_1.Param)("sessionId")),

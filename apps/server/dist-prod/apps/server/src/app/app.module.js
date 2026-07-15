@@ -17,12 +17,13 @@ const ingestion_module_1 = require("../modules/ingestion/ingestion.module");
 const library_module_1 = require("../modules/library/library.module");
 const review_module_1 = require("../modules/review/review.module");
 const search_module_1 = require("../modules/search/search.module");
+const settings_module_1 = require("../modules/settings/settings.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
-        imports: [ingestion_module_1.IngestionModule, library_module_1.LibraryModule, review_module_1.ReviewModule, search_module_1.SearchModule],
+        imports: [ingestion_module_1.IngestionModule, library_module_1.LibraryModule, review_module_1.ReviewModule, search_module_1.SearchModule, settings_module_1.SettingsModule],
         controllers: [health_controller_1.HealthController],
         providers: [app_config_service_1.AppConfigService, prisma_service_1.PrismaService, storage_service_1.StorageService, agent_client_service_1.AgentClientService],
     })

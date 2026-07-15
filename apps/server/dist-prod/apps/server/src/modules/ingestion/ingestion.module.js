@@ -12,6 +12,7 @@ const agent_client_service_1 = require("../../infrastructure/agent/agent-client.
 const app_config_service_1 = require("../../infrastructure/config/app-config.service");
 const prisma_service_1 = require("../../infrastructure/persistence/prisma.service");
 const storage_service_1 = require("../../infrastructure/storage/storage.service");
+const web_content_service_1 = require("../../infrastructure/web/web-content.service");
 const ingestion_controller_1 = require("./ingestion.controller");
 const ingestion_service_1 = require("./ingestion.service");
 let IngestionModule = class IngestionModule {
@@ -20,7 +21,7 @@ exports.IngestionModule = IngestionModule;
 exports.IngestionModule = IngestionModule = __decorate([
     (0, common_1.Module)({
         controllers: [ingestion_controller_1.IngestionController],
-        providers: [app_config_service_1.AppConfigService, ingestion_service_1.IngestionService, agent_client_service_1.AgentClientService, storage_service_1.StorageService, prisma_service_1.PrismaService],
+        providers: [app_config_service_1.AppConfigService, ingestion_service_1.IngestionService, agent_client_service_1.AgentClientService, storage_service_1.StorageService, web_content_service_1.WebContentService, prisma_service_1.PrismaService],
         exports: [ingestion_service_1.IngestionService],
     })
 ], IngestionModule);

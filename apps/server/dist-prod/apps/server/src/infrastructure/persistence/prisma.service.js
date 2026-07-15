@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var PrismaService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.PrismaService = void 0;
 const common_1 = require("@nestjs/common");
@@ -19,7 +20,7 @@ const promises_1 = require("node:fs/promises");
 const node_path_1 = require("node:path");
 const node_sqlite_1 = require("node:sqlite");
 const app_config_service_1 = require("../config/app-config.service");
-let PrismaService = class PrismaService {
+let PrismaService = PrismaService_1 = class PrismaService {
     config;
     db;
     constructor(config) {
@@ -35,18 +36,32 @@ let PrismaService = class PrismaService {
     source = {
         create: async ({ data }) => {
             const db = await this.getDb();
-            const id = (0, node_crypto_1.randomUUID)();
+            const id = data.id ?? (0, node_crypto_1.randomUUID)();
             const now = new Date().toISOString();
             db.prepare(`insert into sources (
           id, type, title, url, local_path, content_hash, status, content, created_at, updated_at
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, data.type, data.title, data.url ?? null, data.localPath, data.contentHash, data.status, data.content, now, now);
             return this.mapSource(db.prepare("select * from sources where id = ?").get(id));
         },
+        update: async ({ where, data }) => {
+            const db = await this.getDb();
+            const current = db.prepare("select * from sources where id = ?").get(where.id);
+            if (!current) {
+                throw new Error(`source_not_found:${where.id}`);
+            }
+            if (data.localPath !== undefined && (typeof data.localPath !== "string" || data.localPath.length === 0)) {
+                throw new Error("source_local_path_required");
+            }
+            db.prepare(`update sources
+         set type = ?, title = ?, url = ?, local_path = ?, content_hash = ?, status = ?, content = ?, updated_at = ?
+         where id = ?`).run(data.type ?? String(current.type), data.title ?? String(current.title), data.url !== undefined ? data.url : this.nullableText(current.url), data.localPath !== undefined ? data.localPath : this.nullableText(current.local_path), data.contentHash ?? String(current.content_hash), data.status ?? String(current.status), data.content ?? String(current.content), new Date().toISOString(), where.id);
+            return this.mapSource(db.prepare("select * from sources where id = ?").get(where.id));
+        },
     };
     ingestionSession = {
         create: async ({ data }) => {
             const db = await this.getDb();
-            const id = (0, node_crypto_1.randomUUID)();
+            const id = data.id ?? (0, node_crypto_1.randomUUID)();
             const now = new Date().toISOString();
             db.prepare(`insert into ingestion_sessions (
           id, source_id, latest_agent_task_id, status, domain_hint, created_at, updated_at, confirmed_at, imported_at
@@ -95,7 +110,7 @@ let PrismaService = class PrismaService {
     conceptCandidate = {
         create: async ({ data }) => {
             const db = await this.getDb();
-            const id = (0, node_crypto_1.randomUUID)();
+            const id = data.id ?? (0, node_crypto_1.randomUUID)();
             const now = new Date().toISOString();
             db.prepare(`insert into concept_candidates (
           id, session_id, title, summary, evidence, is_core, is_selected, created_at, updated_at
@@ -120,6 +135,24 @@ let PrismaService = class PrismaService {
                 return mapped;
             });
         },
+        deleteMany: async ({ where } = {}) => {
+            const db = await this.getDb();
+            const conditions = [];
+            const params = [];
+            if (where?.sessionId) {
+                conditions.push("session_id = ?");
+                params.push(where.sessionId);
+            }
+            if (where?.id?.in) {
+                if (where.id.in.length === 0) {
+                    return { count: 0 };
+                }
+                conditions.push(`id in (${where.id.in.map(() => "?").join(",")})`);
+                params.push(...where.id.in);
+            }
+            const result = db.prepare(`delete from concept_candidates${conditions.length ? ` where ${conditions.join(" and ")}` : ""}`).run(...params);
+            return { count: Number(result.changes) };
+        },
     };
     cardCandidate = {
         createMany: async ({ data }) => {
@@ -129,15 +162,22 @@ let PrismaService = class PrismaService {
           id, session_id, concept_candidate_id, type, question, answer, explanation, is_selected, created_at, updated_at
         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
             for (const item of data) {
-                statement.run((0, node_crypto_1.randomUUID)(), item.sessionId, item.conceptCandidateId ?? null, item.type, item.question, item.answer, item.explanation ?? null, this.boolToInt(item.isSelected), now, now);
+                statement.run(item.id ?? (0, node_crypto_1.randomUUID)(), item.sessionId, item.conceptCandidateId ?? null, item.type, item.question, item.answer, item.explanation ?? null, this.boolToInt(item.isSelected), now, now);
             }
             return { count: data.length };
+        },
+        deleteMany: async ({ where } = {}) => {
+            const db = await this.getDb();
+            const result = where?.sessionId
+                ? db.prepare("delete from card_candidates where session_id = ?").run(where.sessionId)
+                : db.prepare("delete from card_candidates").run();
+            return { count: Number(result.changes) };
         },
     };
     concept = {
         create: async ({ data }) => {
             const db = await this.getDb();
-            const id = (0, node_crypto_1.randomUUID)();
+            const id = data.id ?? (0, node_crypto_1.randomUUID)();
             const now = new Date().toISOString();
             db.prepare(`insert into concepts (
           id, title, summary, explanation, evidence, status, mastery_score, created_at, updated_at
@@ -198,7 +238,7 @@ let PrismaService = class PrismaService {
     reviewCard = {
         create: async ({ data }) => {
             const db = await this.getDb();
-            const id = (0, node_crypto_1.randomUUID)();
+            const id = data.id ?? (0, node_crypto_1.randomUUID)();
             const now = new Date().toISOString();
             db.prepare(`insert into review_cards (
           id, concept_id, type, question, answer, explanation, due_at, stability, difficulty_fsrs, elapsed_days, scheduled_days, reps, lapses, created_at, updated_at
@@ -252,7 +292,7 @@ let PrismaService = class PrismaService {
     reviewLog = {
         create: async ({ data }) => {
             const db = await this.getDb();
-            const id = (0, node_crypto_1.randomUUID)();
+            const id = data.id ?? (0, node_crypto_1.randomUUID)();
             const now = new Date().toISOString();
             db.prepare(`insert into review_logs (
           id, card_id, concept_id, rating, reviewed_at, next_due_at, time_spent_seconds, created_at
@@ -269,6 +309,143 @@ let PrismaService = class PrismaService {
             };
         },
     };
+    agentTask = {
+        create: async ({ data }) => {
+            const db = await this.getDb();
+            const id = data.id ?? (0, node_crypto_1.randomUUID)();
+            const now = new Date().toISOString();
+            db.prepare(`insert into agent_tasks (
+          id, session_id, type, status, attempt_count, last_error_code, last_error_message, started_at, finished_at, created_at, updated_at
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, data.sessionId ?? null, data.type ?? "ingestion", data.status, data.attemptCount ?? 0, data.lastErrorCode ?? null, data.lastErrorMessage ?? null, data.startedAt ? this.asIso(data.startedAt) : null, data.finishedAt ? this.asIso(data.finishedAt) : null, now, now);
+            return this.mapAgentTask(db.prepare("select * from agent_tasks where id = ?").get(id));
+        },
+        update: async ({ where, data }) => {
+            const db = await this.getDb();
+            const current = db.prepare("select * from agent_tasks where id = ?").get(where.id);
+            if (!current) {
+                throw new Error(`agent_task_not_found:${where.id}`);
+            }
+            db.prepare(`update agent_tasks
+         set session_id = ?, type = ?, status = ?, attempt_count = ?, last_error_code = ?, last_error_message = ?, started_at = ?, finished_at = ?, updated_at = ?
+         where id = ?`).run(data.sessionId !== undefined ? data.sessionId : this.nullableText(current.session_id), data.type ?? String(current.type), data.status ?? String(current.status), data.attemptCount ?? Number(current.attempt_count), data.lastErrorCode !== undefined ? data.lastErrorCode : this.nullableText(current.last_error_code), data.lastErrorMessage !== undefined ? data.lastErrorMessage : this.nullableText(current.last_error_message), data.startedAt !== undefined ? (data.startedAt ? this.asIso(data.startedAt) : null) : this.nullableText(current.started_at), data.finishedAt !== undefined ? (data.finishedAt ? this.asIso(data.finishedAt) : null) : this.nullableText(current.finished_at), new Date().toISOString(), where.id);
+            return this.mapAgentTask(db.prepare("select * from agent_tasks where id = ?").get(where.id));
+        },
+        findUnique: async ({ where }) => {
+            const db = await this.getDb();
+            const row = db.prepare("select * from agent_tasks where id = ?").get(where.id);
+            return row ? this.mapAgentTask(row) : null;
+        },
+    };
+    note = {
+        create: async ({ data }) => {
+            const db = await this.getDb();
+            const id = data.id ?? (0, node_crypto_1.randomUUID)();
+            const now = new Date().toISOString();
+            db.prepare(`insert into notes (id, concept_id, title, content, local_path, created_at, updated_at)
+         values (?, ?, ?, ?, ?, ?, ?)`).run(id, data.conceptId, data.title, data.content, data.localPath ?? null, now, now);
+            return this.mapNote(db.prepare("select * from notes where id = ?").get(id));
+        },
+    };
+    async claimPendingIngestionTask(taskId) {
+        const db = await this.getDb();
+        const now = new Date().toISOString();
+        const row = db
+            .prepare(`update agent_tasks
+         set status = 'running', started_at = ?, updated_at = ?
+         where id = ? and status = 'pending'
+         returning *`)
+            .get(now, now, taskId);
+        return row ? this.mapAgentTask(row) : null;
+    }
+    async claimReviewableIngestion(sessionId) {
+        const db = await this.getDb();
+        const now = new Date().toISOString();
+        const row = db
+            .prepare(`update ingestion_sessions
+         set status = 'confirmed', confirmed_at = ?, updated_at = ?
+         where id = ? and status = 'reviewable'
+         returning *`)
+            .get(now, now, sessionId);
+        return row ? this.mapIngestionSession(row) : null;
+    }
+    async claimFailedIngestionRetry(sessionId) {
+        const db = await this.getDb();
+        let transactionStarted = false;
+        try {
+            db.exec("begin immediate");
+            transactionStarted = true;
+            const task = db
+                .prepare(`select task.*
+           from ingestion_sessions session
+           join agent_tasks task on task.id = session.latest_agent_task_id
+           where session.id = ?
+             and session.status = 'failed'
+             and task.status = 'failed'`)
+                .get(sessionId);
+            if (!task) {
+                db.exec("rollback");
+                transactionStarted = false;
+                return null;
+            }
+            const now = new Date().toISOString();
+            const taskUpdate = db
+                .prepare(`update agent_tasks
+           set status = 'pending', attempt_count = attempt_count + 1,
+               last_error_code = null, last_error_message = null,
+               started_at = null, finished_at = null, updated_at = ?
+           where id = ? and status = 'failed'`)
+                .run(now, String(task.id));
+            const sessionUpdate = db
+                .prepare(`update ingestion_sessions
+           set status = 'processing', updated_at = ?
+           where id = ? and status = 'failed' and latest_agent_task_id = ?`)
+                .run(now, sessionId, String(task.id));
+            if (Number(taskUpdate.changes) !== 1 || Number(sessionUpdate.changes) !== 1) {
+                db.exec("rollback");
+                transactionStarted = false;
+                return null;
+            }
+            const updatedTask = db.prepare("select * from agent_tasks where id = ?").get(String(task.id));
+            db.exec("commit");
+            transactionStarted = false;
+            return this.mapAgentTask(updatedTask);
+        }
+        catch (error) {
+            if (transactionStarted) {
+                try {
+                    db.exec("rollback");
+                }
+                catch {
+                    // 保留原始事务异常。
+                }
+            }
+            throw error;
+        }
+    }
+    async transaction(work) {
+        const transactionClient = new PrismaService_1(this.config);
+        let transactionDb;
+        try {
+            await transactionClient.onModuleInit();
+            transactionDb = await transactionClient.getDb();
+            transactionDb.exec("begin immediate");
+            const result = await work(transactionClient);
+            transactionDb.exec("commit");
+            return result;
+        }
+        catch (error) {
+            try {
+                transactionDb?.exec("rollback");
+            }
+            catch {
+                // 保留原始回调异常。
+            }
+            throw error;
+        }
+        finally {
+            await transactionClient.onModuleDestroy();
+        }
+    }
     async initialize() {
         await (0, promises_1.mkdir)((0, node_path_1.dirname)(this.config.databasePath), { recursive: true });
         this.db = new node_sqlite_1.DatabaseSync(this.config.databasePath);
@@ -343,6 +520,21 @@ let PrismaService = class PrismaService {
         concept_id text not null references concepts(id) on delete cascade,
         title text not null,
         content text not null,
+        local_path text,
+        created_at text not null,
+        updated_at text not null
+      );
+
+      create table if not exists agent_tasks (
+        id text primary key,
+        session_id text,
+        type text not null default 'ingestion',
+        status text not null,
+        attempt_count integer not null default 0,
+        last_error_code text,
+        last_error_message text,
+        started_at text,
+        finished_at text,
         created_at text not null,
         updated_at text not null
       );
@@ -376,6 +568,10 @@ let PrismaService = class PrismaService {
         created_at text not null
       );
     `);
+        const noteColumns = this.db.prepare("pragma table_info(notes)").all();
+        if (!noteColumns.some((column) => String(column.name) === "local_path")) {
+            this.db.exec("alter table notes add column local_path text");
+        }
     }
     async getDb() {
         if (!this.db) {
@@ -401,7 +597,7 @@ let PrismaService = class PrismaService {
             type: String(row.type),
             title: String(row.title),
             url: row.url ? String(row.url) : undefined,
-            localPath: String(row.local_path),
+            localPath: row.local_path == null ? undefined : String(row.local_path),
             contentHash: String(row.content_hash),
             status: String(row.status),
             content: String(row.content),
@@ -468,6 +664,22 @@ let PrismaService = class PrismaService {
             conceptId: String(row.concept_id),
             title: String(row.title),
             content: String(row.content),
+            localPath: row.local_path ? String(row.local_path) : undefined,
+            createdAt: String(row.created_at),
+            updatedAt: String(row.updated_at),
+        };
+    }
+    mapAgentTask(row) {
+        return {
+            id: String(row.id),
+            sessionId: row.session_id ? String(row.session_id) : undefined,
+            type: String(row.type),
+            status: String(row.status),
+            attemptCount: Number(row.attempt_count),
+            lastErrorCode: row.last_error_code ? String(row.last_error_code) : undefined,
+            lastErrorMessage: row.last_error_message ? String(row.last_error_message) : undefined,
+            startedAt: row.started_at ? String(row.started_at) : undefined,
+            finishedAt: row.finished_at ? String(row.finished_at) : undefined,
             createdAt: String(row.created_at),
             updatedAt: String(row.updated_at),
         };
@@ -493,7 +705,7 @@ let PrismaService = class PrismaService {
     }
 };
 exports.PrismaService = PrismaService;
-exports.PrismaService = PrismaService = __decorate([
+exports.PrismaService = PrismaService = PrismaService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, common_1.Inject)(app_config_service_1.AppConfigService)),
     __metadata("design:paramtypes", [app_config_service_1.AppConfigService])
