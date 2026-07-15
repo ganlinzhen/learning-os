@@ -275,6 +275,7 @@ def test_test_connection_normalizes_invalid_response_format():
         httpx.Response(200, json={}),
         httpx.Response(200, content=b"not json"),
         httpx.Response(200, json={"choices": [{}]}),
+        httpx.Response(200, json={"choices": [{"message": {}}]}),
     ],
 )
 def test_test_connection_rejects_invalid_chat_completion_response(response):

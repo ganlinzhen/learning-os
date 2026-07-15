@@ -119,7 +119,11 @@ def test_test_connection_returns_502_when_upstream_fails():
 def test_test_connection_returns_502_when_chat_completion_response_is_invalid():
     app.dependency_overrides[get_generator] = lambda: DeepSeekGenerator(
         api_key="test-key",
-        client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))),
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"choices": [{"message": {}}]}),
+            ),
+        ),
     )
 
     response = TestClient(app).post("/test-connection")
