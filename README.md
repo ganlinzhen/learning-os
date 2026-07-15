@@ -173,7 +173,7 @@ cd apps/generator && ../../.venv/bin/python -m pytest tests/test_app.py -q
 
 ## 导入与笔记手动验证
 
-自动测试会使用本地替身验证导入流程，不会访问真实网页或调用真实模型。完成“配置 DeepSeek”中的环境变量设置后，由用户自行启动 Web 开发链路：
+自动单元测试会使用本地替身验证导入流程，不会访问真实网页或调用真实模型；端到端测试不在此说明范围内。完成“配置 DeepSeek”中的环境变量设置后，由用户自行启动 Web 开发链路：
 
 ```bash
 pnpm dev:web
@@ -185,7 +185,7 @@ pnpm dev:web
 2. 观察每个导入任务从 `processing` 进入 `reviewable`；若抓取或模型调用失败，应进入 `failed` 并显示错误信息。
 3. 对失败任务点击“重试”，确认任务重新进入 `processing`，随后进入 `reviewable` 或再次明确失败。
 4. 在待审核页面选择候选知识点和复习卡片并确认入库。
-5. 在仓库的 `.learning-os/notes/` 目录检查生成的结构化 Markdown，确认包含元数据、摘要、核心解释、证据与复习卡片。
+5. 在服务端数据目录的 `notes/` 中检查生成的结构化 Markdown：若设置了 `LEARNING_OS_ROOT_DIR`，使用该目录；直接运行 `pnpm dev:web` 时，默认位置为 `apps/server/.learning-os/notes/`。确认文件包含元数据、摘要、核心解释、证据与复习卡片。
 6. 打开知识库，确认已入库的知识点和卡片可以正常查看。
 
 ## 已验证流程

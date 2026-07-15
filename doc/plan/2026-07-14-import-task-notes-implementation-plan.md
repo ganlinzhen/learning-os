@@ -15,7 +15,7 @@
 - 不实现自动重试、登录/反爬绕过、JS 渲染网页、PDF/图片抓取与 Markdown 反向同步。
 - 笔记保存到应用根目录下的 `notes/`；运行时 SQLite 仍位于 `.learning-os/data/learning-os.db`。
 - 不启动 dev server、浏览器或 Electron 进行验证；只提供手动验证说明。
-- 不修改未跟踪的 `apps/shell/.preload-build/`。
+- 不将用户已有的 `apps/shell/.preload-build/preload/preload.cjs` 未暂存删除纳入提交，也不恢复该文件。
 
 ---
 
