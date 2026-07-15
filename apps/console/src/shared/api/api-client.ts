@@ -25,6 +25,11 @@ export const apiClient = {
   getIngestionDetail(sessionId: string) {
     return request<IngestionDetailDto>(`/ingestions/${sessionId}`);
   },
+  retryIngestion(sessionId: string) {
+    return request<{ sessionId: string; status: "processing" }>(`/ingestions/${sessionId}/retry`, {
+      method: "POST",
+    });
+  },
   confirmIngestion(sessionId: string, input: ConfirmIngestionDto) {
     return request<{ importedConceptCount: number }>(`/ingestions/${sessionId}/confirm`, {
       method: "POST",
