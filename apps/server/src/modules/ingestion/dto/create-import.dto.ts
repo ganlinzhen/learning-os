@@ -2,7 +2,7 @@ import type { CreateImportDto as CreateImportInput } from "@learning-os/contract
 
 export class CreateImportDto implements CreateImportInput {
   type!: "text" | "url" | "markdown";
-  title!: string;
-  content!: string;
+  title?: string;
+  content?: string;
   url?: string;
 }

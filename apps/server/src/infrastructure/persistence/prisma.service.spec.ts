@@ -6,6 +6,54 @@ import { describe, expect, it } from "vitest";
 import { PrismaService } from "./prisma.service";
 
 describe("PrismaService", () => {
+  it("按会话清除旧卡片候选", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-card-candidate-delete-"));
+    const service = new PrismaService({
+      appRootDir: rootDir,
+      databasePath: join(rootDir, "data", "learning-os.db"),
+    } as any);
+    await service.onModuleInit();
+    const source = await service.source.create({
+      data: {
+        type: "text",
+        title: "候选来源",
+        localPath: "/tmp/candidate.txt",
+        contentHash: "candidate-hash",
+        status: "stored",
+        content: "候选正文",
+      },
+    });
+    const session = await service.ingestionSession.create({
+      data: { sourceId: source.id, status: "processing" },
+    });
+    const candidate = await service.conceptCandidate.create({
+      data: {
+        sessionId: session.id,
+        title: "旧候选",
+        summary: "旧摘要",
+        isCore: true,
+        isSelected: true,
+      },
+    });
+    await service.cardCandidate.createMany({
+      data: [
+        {
+          sessionId: session.id,
+          conceptCandidateId: candidate.id,
+          type: "qa",
+          question: "旧问题",
+          answer: "旧答案",
+          isSelected: true,
+        },
+      ],
+    });
+
+    await expect(service.cardCandidate.deleteMany({ where: { sessionId: session.id } })).resolves.toEqual({
+      count: 1,
+    });
+    await service.onModuleDestroy();
+  });
+
   it("在隔离的 SQLite 数据库中创建并查询失败的智能体任务", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-agent-task-"));
     const service = new PrismaService({

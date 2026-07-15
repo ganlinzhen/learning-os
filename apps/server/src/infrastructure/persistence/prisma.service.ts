@@ -238,6 +238,13 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       }
       return { count: data.length };
     },
+    deleteMany: async ({ where }: { where?: { sessionId?: string } } = {}) => {
+      const db = await this.getDb();
+      const result = where?.sessionId
+        ? db.prepare("delete from card_candidates where session_id = ?").run(where.sessionId)
+        : db.prepare("delete from card_candidates").run();
+      return { count: Number(result.changes) };
+    },
   };
 
   readonly concept = {

@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
 import { BadRequestException } from "@nestjs/common";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { IngestionService } from "./ingestion.service";
 
 describe("IngestionService", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("返回最新失败智能体任务的详情和重试资格", async () => {
     const prisma = {
       ingestionSession: {
@@ -64,34 +68,24 @@ describe("IngestionService", () => {
     });
   });
 
-  it("creates source and ingestion session for text import", async () => {
+  it("生成器尚未完成时已返回 processing 并创建 pending 任务", async () => {
+    let scheduledTask: (() => void) | undefined;
+    vi.spyOn(globalThis, "queueMicrotask").mockImplementation((callback) => {
+      scheduledTask = callback;
+    });
     const prisma = {
       source: { create: vi.fn().mockResolvedValue({ id: "src_1" }) },
-      ingestionSession: {
-        create: vi.fn().mockResolvedValue({ id: "session_1", status: "created" }),
-        update: vi.fn().mockResolvedValue({ id: "session_1", status: "reviewable" }),
-      },
+      ingestionSession: { create: vi.fn().mockResolvedValue({ id: "session_1" }) },
       agentTask: {
         create: vi.fn().mockResolvedValue({ id: "task_1" }),
         update: vi.fn().mockResolvedValue({ id: "task_1" }),
       },
-      conceptCandidate: { createMany: vi.fn() },
-      cardCandidate: { createMany: vi.fn() },
     } as any;
-
     const storageService = {
-      saveSourceContent: vi.fn().mockResolvedValue({
-        localPath: "/tmp/RSC.md",
-        contentHash: "hash_1",
-      }),
+      saveSourceContent: vi.fn().mockResolvedValue({ localPath: "/tmp/RSC.txt", contentHash: "hash_1" }),
+      resolveImportContent: vi.fn(),
     } as any;
-
-    const agentClient = {
-      generateCandidates: vi.fn().mockResolvedValue({
-        coreConcepts: [],
-        candidateConcepts: [],
-      }),
-    } as any;
+    const agentClient = { generateCandidates: vi.fn(() => new Promise(() => undefined)) } as any;
 
     const result = await new IngestionService(prisma, storageService, agentClient).createImport({
       type: "text",
@@ -99,40 +93,52 @@ describe("IngestionService", () => {
       content: "server components",
     });
 
-    expect(result.sessionId).toBe("session_1");
-    expect(prisma.agentTask.update).toHaveBeenNthCalledWith(1, {
+    expect(result).toEqual({ sourceId: "src_1", sessionId: "session_1", status: "processing" });
+    expect(prisma.agentTask.create).toHaveBeenCalledWith({
+      data: { type: "ingestion", status: "pending", attemptCount: 1 },
+    });
+    expect(prisma.agentTask.update).toHaveBeenCalledWith({
       where: { id: "task_1" },
       data: { sessionId: "session_1" },
+    });
+    expect(scheduledTask).toBeTypeOf("function");
+    expect(agentClient.generateCandidates).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { type: "url" as const, url: "https://example.com", expectedInitialTitle: "" },
+    { type: "markdown" as const, content: "# Markdown 标题\n\n正文", expectedInitialTitle: "" },
+  ])("接受 $type 导入并保存原始来源", async (input) => {
+    vi.spyOn(globalThis, "queueMicrotask").mockImplementation(() => undefined);
+    const prisma = {
+      source: { create: vi.fn().mockResolvedValue({ id: "src_1" }) },
+      ingestionSession: { create: vi.fn().mockResolvedValue({ id: "session_1" }) },
+      agentTask: {
+        create: vi.fn().mockResolvedValue({ id: "task_1" }),
+        update: vi.fn().mockResolvedValue({ id: "task_1" }),
+      },
+    } as any;
+    const storageService = {
+      saveSourceContent: vi.fn().mockResolvedValue({ localPath: "/tmp/source.txt", contentHash: "hash_1" }),
+    } as any;
+
+    await expect(new IngestionService(prisma, storageService, {} as any).createImport(input)).resolves.toMatchObject({
+      status: "processing",
+    });
+    expect(prisma.source.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: input.type,
+        title: input.expectedInitialTitle,
+        status: "stored",
+      }),
     });
   });
 
   it("文本导入缺少正文时返回业务错误", async () => {
-    const service = new IngestionService(
-      {} as any,
-      { saveSourceContent: vi.fn() } as any,
-      {} as any,
+    const service = new IngestionService({} as any, { saveSourceContent: vi.fn() } as any, {} as any);
+
+    await expect(service.createImport({ type: "text", title: "缺少正文的文本" })).rejects.toThrow(
+      BadRequestException,
     );
-
-    await expect(
-      service.createImport({
-        type: "text",
-        title: "缺少正文的文本",
-      }),
-    ).rejects.toThrow(BadRequestException);
-  });
-
-  it("URL 导入在当前入口返回业务错误", async () => {
-    const service = new IngestionService(
-      {} as any,
-      { saveSourceContent: vi.fn() } as any,
-      {} as any,
-    );
-
-    await expect(
-      service.createImport({
-        type: "url",
-        url: "https://example.com",
-      }),
-    ).rejects.toThrow(BadRequestException);
   });
 });

@@ -17,6 +17,11 @@ export class IngestionController {
     return this.service.getIngestionDetail(sessionId);
   }
 
+  @Post(":sessionId/retry")
+  retryIngestion(@Param("sessionId") sessionId: string) {
+    return this.service.retryIngestion(sessionId);
+  }
+
   @Post(":sessionId/confirm")
   confirmIngestion(@Param("sessionId") sessionId: string, @Body() input: ConfirmIngestionDto) {
     return this.service.confirmIngestion(sessionId, input);
