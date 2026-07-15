@@ -77,3 +77,36 @@ def test_generate_returns_502_when_deepseek_generation_fails():
 
     assert response.status_code == 502
     assert response.json() == {"detail": "deepseek_generation_failed"}
+
+
+def test_test_connection_returns_ok():
+    app.dependency_overrides[get_generator] = lambda: DeepSeekGenerator(
+        api_key="test-key",
+        client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200))),
+    )
+
+    response = TestClient(app).post("/test-connection")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_test_connection_returns_503_when_deepseek_key_is_missing():
+    app.dependency_overrides[get_generator] = lambda: DeepSeekGenerator(api_key=None)
+
+    response = TestClient(app).post("/test-connection")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "deepseek_not_configured"}
+
+
+def test_test_connection_returns_502_when_upstream_fails():
+    app.dependency_overrides[get_generator] = lambda: DeepSeekGenerator(
+        api_key="test-key",
+        client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
+    )
+
+    response = TestClient(app).post("/test-connection")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "deepseek_generation_failed"}

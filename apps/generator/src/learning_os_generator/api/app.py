@@ -27,3 +27,16 @@ def generate(
         raise HTTPException(status_code=503, detail="deepseek_not_configured") from error
     except DeepSeekGenerationError as error:
         raise HTTPException(status_code=502, detail="deepseek_generation_failed") from error
+
+
+@app.post("/test-connection")
+def test_connection(
+    generator: Annotated[DeepSeekGenerator, Depends(get_generator)],
+) -> dict[str, str]:
+    try:
+        generator.test_connection()
+        return {"status": "ok"}
+    except DeepSeekNotConfiguredError as error:
+        raise HTTPException(status_code=503, detail="deepseek_not_configured") from error
+    except DeepSeekGenerationError as error:
+        raise HTTPException(status_code=502, detail="deepseek_generation_failed") from error

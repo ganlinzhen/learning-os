@@ -158,3 +158,112 @@ def test_from_environment_reads_local_dotenv_without_overriding_process_environm
     assert generator.api_key == "file-key"
     assert generator.base_url == "https://deepseek.example"
     assert generator.model == "environment-model"
+
+
+def test_from_environment_prefers_shared_settings_file(tmp_path, monkeypatch):
+    path = tmp_path / "llm.json"
+    path.write_text(
+        json.dumps(
+            {
+                "apiKey": "saved",
+                "baseUrl": "https://proxy.example/v1",
+                "model": "saved-model",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LEARNING_OS_LLM_CONFIG_PATH", str(path))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ignored")
+
+    generator = DeepSeekGenerator.from_environment()
+
+    assert generator.api_key == "saved"
+    assert generator.base_url == "https://proxy.example/v1"
+    assert generator.model == "saved-model"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        None,
+        "{not-json",
+        json.dumps({"apiKey": 1, "baseUrl": "https://proxy.example", "model": "saved-model"}),
+        json.dumps({"apiKey": "saved", "baseUrl": 1, "model": "saved-model"}),
+        json.dumps({"apiKey": "saved", "baseUrl": "https://proxy.example", "model": 1}),
+        json.dumps({"baseUrl": "https://proxy.example", "model": "saved-model"}),
+    ],
+)
+def test_from_environment_treats_invalid_shared_settings_as_unconfigured(tmp_path, monkeypatch, content):
+    path = tmp_path / "llm.json"
+    if content is not None:
+        path.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("LEARNING_OS_LLM_CONFIG_PATH", str(path))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ignored")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://ignored.example")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "ignored-model")
+
+    generator = DeepSeekGenerator.from_environment()
+
+    with pytest.raises(DeepSeekNotConfiguredError):
+        generator.test_connection()
+
+
+def test_test_connection_posts_small_non_streaming_request():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["request"] = request
+        return httpx.Response(200)
+
+    generator = DeepSeekGenerator(
+        api_key="key",
+        base_url="https://proxy.example/v1",
+        model="saved-model",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    generator.test_connection()
+
+    request = captured["request"]
+    assert str(request.url) == "https://proxy.example/v1/chat/completions"
+    assert request.headers["authorization"] == "Bearer key"
+    assert json.loads(request.content) == {
+        "model": "saved-model",
+        "messages": [{"role": "user", "content": "ping"}],
+        "thinking": {"type": "disabled"},
+        "max_tokens": 1,
+        "stream": False,
+    }
+
+
+@pytest.mark.parametrize("status_code", [401, 500])
+def test_test_connection_normalizes_upstream_http_errors(status_code):
+    generator = DeepSeekGenerator(
+        api_key="key",
+        client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(status_code))),
+    )
+
+    with pytest.raises(DeepSeekGenerationError):
+        generator.test_connection()
+
+
+def test_test_connection_normalizes_timeout_errors():
+    class TimeoutClient:
+        def post(self, *_args, **_kwargs):
+            raise httpx.TimeoutException("timeout")
+
+    generator = DeepSeekGenerator(api_key="key", client=TimeoutClient())
+
+    with pytest.raises(DeepSeekGenerationError):
+        generator.test_connection()
+
+
+def test_test_connection_normalizes_invalid_response_format():
+    class InvalidResponseClient:
+        def post(self, *_args, **_kwargs):
+            return object()
+
+    generator = DeepSeekGenerator(api_key="key", client=InvalidResponseClient())
+
+    with pytest.raises(DeepSeekGenerationError):
+        generator.test_connection()

@@ -32,6 +32,10 @@ class DeepSeekGenerator:
 
     @classmethod
     def from_environment(cls, dotenv_path: Path | None = None) -> "DeepSeekGenerator":
+        config_path = os.environ.get("LEARNING_OS_LLM_CONFIG_PATH")
+        if config_path:
+            return cls._from_shared_settings(Path(config_path))
+
         values = dotenv_values(dotenv_path or Path(__file__).resolve().parents[3] / ".env")
 
         def value(name: str, default: str | None = None) -> str | None:
@@ -42,6 +46,27 @@ class DeepSeekGenerator:
             base_url=value("DEEPSEEK_BASE_URL", "https://api.deepseek.com") or "https://api.deepseek.com",
             model=value("DEEPSEEK_MODEL", "deepseek-v4-flash") or "deepseek-v4-flash",
         )
+
+    @classmethod
+    def _from_shared_settings(cls, path: Path) -> "DeepSeekGenerator":
+        try:
+            settings = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(settings, dict):
+                raise ValueError("invalid_settings")
+
+            api_key = settings.get("apiKey")
+            base_url = settings.get("baseUrl")
+            model = settings.get("model")
+            if any(value is not None and not isinstance(value, str) for value in (api_key, base_url, model)):
+                raise ValueError("invalid_settings")
+
+            return cls(
+                api_key=api_key.strip() if api_key else None,
+                base_url=base_url or "https://api.deepseek.com",
+                model=model or "deepseek-v4-flash",
+            )
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return cls(api_key=None)
 
     def generate(self, request: GenerateRequest) -> GenerateResponse:
         if not self.api_key:
@@ -66,6 +91,26 @@ class DeepSeekGenerator:
                 raise ValueError("empty_content")
             return GenerateResponse.model_validate(json.loads(content))
         except (httpx.HTTPError, KeyError, IndexError, RuntimeError, TypeError, ValueError, ValidationError) as error:
+            raise DeepSeekGenerationError() from error
+
+    def test_connection(self) -> None:
+        if not self.api_key:
+            raise DeepSeekNotConfiguredError()
+
+        try:
+            response = self.client.post(
+                f"{self.base_url}/chat/completions",
+                headers={"authorization": f"Bearer {self.api_key}"},
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "thinking": {"type": "disabled"},
+                    "max_tokens": 1,
+                    "stream": False,
+                },
+            )
+            response.raise_for_status()
+        except (httpx.HTTPError, AttributeError, RuntimeError, TypeError, ValueError) as error:
             raise DeepSeekGenerationError() from error
 
     @staticmethod
