@@ -6,6 +6,81 @@ import { describe, expect, it, vi } from "vitest";
 import { StorageService } from "./storage.service";
 
 describe("StorageService", () => {
+  it("原子写入包含完整结构的 Markdown 笔记", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-note-write-"));
+    const service = new StorageService({ appRootDir: rootDir } as any, { fetch: vi.fn() } as any);
+
+    const [note] = await service.writeNotes([
+      {
+        conceptId: "concept_1",
+        sourceId: "source_1",
+        title: "RSC / 入门",
+        summary: "服务端组件",
+        evidence: "服务端渲染",
+        cards: [{ question: "RSC 是什么？", answer: "服务端组件" }],
+      },
+    ]);
+
+    expect(note.title).toBe("RSC / 入门");
+    expect(note.localPath).toBe(join(rootDir, "notes", "RSC-入门-concept_1.md"));
+    await expect(readFile(note.localPath, "utf8")).resolves.toBe(note.content);
+    expect(note.content).toMatch(
+      /^---\nconceptId: concept_1\nsourceId: source_1\ncreatedAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z\ntags: \[\]\n---/,
+    );
+    expect(note.content).toContain("# RSC / 入门\n\n## 摘要\n\n服务端组件");
+    expect(note.content).toContain("## 核心解释\n\n服务端组件");
+    expect(note.content).toContain("## 证据\n\n服务端渲染");
+    expect(note.content).toContain("## 复习卡片\n\n### RSC 是什么？\n\n服务端组件");
+    const files = await readdir(join(rootDir, "notes"));
+    expect(files).toEqual(["RSC-入门-concept_1.md"]);
+    expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);
+  });
+
+  it("批量写入中途失败时清理已写笔记和临时文件", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-note-write-failure-"));
+    const notesDir = join(rootDir, "notes");
+    await mkdir(join(notesDir, "Broken-concept_2.md"), { recursive: true });
+    const service = new StorageService({ appRootDir: rootDir } as any, { fetch: vi.fn() } as any);
+
+    await expect(
+      service.writeNotes([
+        {
+          conceptId: "concept_1",
+          sourceId: "source_1",
+          title: "First",
+          summary: "第一篇",
+          evidence: "证据一",
+          cards: [],
+        },
+        {
+          conceptId: "concept_2",
+          sourceId: "source_1",
+          title: "Broken",
+          summary: "第二篇",
+          evidence: "证据二",
+          cards: [],
+        },
+      ]),
+    ).rejects.toBeDefined();
+
+    const files = await readdir(notesDir);
+    expect(files).toEqual(["Broken-concept_2.md"]);
+    expect(files.some((file) => file.endsWith(".tmp"))).toBe(false);
+  });
+
+  it("删除笔记时忽略不存在路径但抛出其他文件错误", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-note-remove-"));
+    const notesDir = join(rootDir, "notes");
+    const existingPath = join(notesDir, "existing.md");
+    await mkdir(notesDir, { recursive: true });
+    await writeFile(existingPath, "正文", "utf8");
+    const service = new StorageService({ appRootDir: rootDir } as any, { fetch: vi.fn() } as any);
+
+    await expect(service.removeFiles([existingPath, join(notesDir, "missing.md")])).resolves.toBeUndefined();
+    await expect(readdir(notesDir)).resolves.toEqual([]);
+    await expect(service.removeFiles([notesDir])).rejects.toBeDefined();
+  });
+
   it("在原路径原子替换来源正文且不产生第二个来源文件", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-source-replace-"));
     const service = new StorageService({ appRootDir: rootDir } as any, { fetch: vi.fn() } as any);

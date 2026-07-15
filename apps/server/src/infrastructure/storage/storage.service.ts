@@ -67,6 +67,99 @@ export class StorageService {
     return { localPath: input.localPath, contentHash };
   }
 
+  async writeNotes(
+    inputs: Array<{
+      conceptId: string;
+      sourceId: string;
+      title: string;
+      summary: string;
+      evidence: string;
+      cards: Array<{ question: string; answer: string }>;
+    }>,
+  ): Promise<Array<{ title: string; content: string; localPath: string }>> {
+    const dir = join(this.config.appRootDir, "notes");
+    await mkdir(dir, { recursive: true });
+    const writtenPaths: string[] = [];
+    const notes: Array<{ title: string; content: string; localPath: string }> = [];
+
+    try {
+      for (const input of inputs) {
+        const localPath = join(dir, `${this.safeFileStem(input.title)}-${input.conceptId}.md`);
+        const temporaryPath = join(dir, `.${basename(localPath)}.${randomUUID()}.tmp`);
+        const content = this.buildNoteContent(input);
+        try {
+          await writeFile(temporaryPath, content, "utf8");
+          await rename(temporaryPath, localPath);
+        } catch (error) {
+          await this.removeFiles([temporaryPath]);
+          throw error;
+        }
+        writtenPaths.push(localPath);
+        notes.push({ title: input.title, content, localPath });
+      }
+      return notes;
+    } catch (error) {
+      await this.removeFiles(writtenPaths);
+      throw error;
+    }
+  }
+
+  async removeFiles(paths: string[]): Promise<void> {
+    await Promise.all(
+      paths.map(async (path) => {
+        try {
+          await unlink(path);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw error;
+          }
+        }
+      }),
+    );
+  }
+
+  private buildNoteContent(input: {
+    conceptId: string;
+    sourceId: string;
+    title: string;
+    summary: string;
+    evidence: string;
+    cards: Array<{ question: string; answer: string }>;
+  }): string {
+    const cards = input.cards.map((card) => `### ${card.question}\n\n${card.answer}`).join("\n\n");
+    return [
+      "---",
+      `conceptId: ${input.conceptId}`,
+      `sourceId: ${input.sourceId}`,
+      `createdAt: ${new Date().toISOString()}`,
+      "tags: []",
+      "---",
+      "",
+      `# ${input.title}`,
+      "",
+      "## 摘要",
+      "",
+      input.summary,
+      "",
+      "## 核心解释",
+      "",
+      input.summary,
+      "",
+      "## 证据",
+      "",
+      input.evidence,
+      "",
+      "## 复习卡片",
+      "",
+      cards,
+      "",
+    ].join("\n");
+  }
+
+  private safeFileStem(title: string): string {
+    return title.trim().replace(/[^\p{L}\p{N}_-]+/gu, "-").replace(/^-+|-+$/g, "") || "untitled";
+  }
+
   private getMarkdownTitle(content: string): string | undefined {
     const title = /^\s{0,3}#(?!#)\s+(.+?)\s*$/m.exec(content)?.[1]?.trim();
     return title?.replace(/[ \t]+#+$/, "").trim();

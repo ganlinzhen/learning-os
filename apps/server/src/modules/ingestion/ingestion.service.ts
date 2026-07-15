@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { ConfirmIngestionDto, CreateImportDto, IngestionDetailDto } from "@learning-os/contracts";
+import { randomUUID } from "node:crypto";
 import { AgentClientService } from "../../infrastructure/agent/agent-client.service";
 import { PrismaService } from "../../infrastructure/persistence/prisma.service";
 import { StorageService } from "../../infrastructure/storage/storage.service";
@@ -189,41 +190,89 @@ export class IngestionService {
   }
 
   async confirmIngestion(sessionId: string, input: ConfirmIngestionDto) {
+    const session = await this.prisma.ingestionSession.findUnique({
+      where: { id: sessionId },
+      include: { source: true },
+    });
+    if (session?.status !== "reviewable" || !session.source) {
+      throw new BadRequestException("仅可确认待审核的导入");
+    }
     const candidates = await this.prisma.conceptCandidate.findMany({
       where: { sessionId, id: { in: input.selectedCandidateIds } },
       include: { cards: true },
     });
-    for (const candidate of candidates) {
-      const concept = await this.prisma.concept.create({
-        data: {
-          title: candidate.title,
-          summary: candidate.summary,
-          explanation: candidate.summary,
-          evidence: candidate.evidence,
-          status: "new",
-          masteryScore: 0,
-        },
-      });
-      const selectedCards = candidate.cards.filter((card: any) =>
-        input.selectedCardIds?.length ? input.selectedCardIds.includes(card.id) : card.isSelected,
-      );
-      for (const card of selectedCards) {
-        await this.prisma.reviewCard.create({
+    if (candidates.length !== new Set(input.selectedCandidateIds).size) {
+      throw new BadRequestException("所选候选不属于当前导入");
+    }
+
+    const imports: Array<{ conceptId: string; candidate: any; cards: any[] }> = candidates.map((candidate: any) => ({
+      conceptId: randomUUID(),
+      candidate,
+      cards: candidate.cards.filter((card: any) =>
+        input.selectedCardIds !== undefined ? input.selectedCardIds.includes(card.id) : card.isSelected,
+      ),
+    }));
+    const notes = await this.storageService.writeNotes(
+      imports.map(({ conceptId, candidate, cards }) => ({
+        conceptId,
+        sourceId: session.source.id,
+        title: candidate.title,
+        summary: candidate.summary,
+        evidence: candidate.evidence ?? "",
+        cards,
+      })),
+    );
+
+    try {
+      await this.prisma.transaction(async (tx: any) => {
+        for (const [index, item] of imports.entries()) {
+          await tx.concept.create({
+            data: {
+              id: item.conceptId,
+              title: item.candidate.title,
+              summary: item.candidate.summary,
+              explanation: item.candidate.summary,
+              evidence: item.candidate.evidence,
+              status: "new",
+              masteryScore: 0,
+            },
+          });
+          for (const card of item.cards) {
+            await tx.reviewCard.create({
+              data: {
+                conceptId: item.conceptId,
+                type: card.type,
+                question: card.question,
+                answer: card.answer,
+                explanation: card.explanation,
+                dueAt: new Date(),
+              },
+            });
+          }
+          const note = notes[index];
+          await tx.note.create({
+            data: {
+              conceptId: item.conceptId,
+              title: note.title,
+              content: note.content,
+              localPath: note.localPath,
+            },
+          });
+        }
+        const confirmedAt = new Date();
+        await tx.ingestionSession.update({
+          where: { id: sessionId },
           data: {
-            conceptId: concept.id,
-            type: card.type,
-            question: card.question,
-            answer: card.answer,
-            explanation: card.explanation,
-            dueAt: new Date(),
+            status: "imported",
+            confirmedAt,
+            importedAt: confirmedAt,
           },
         });
-      }
+      });
+    } catch (error) {
+      await this.storageService.removeFiles(notes.map((note: any) => note.localPath));
+      throw error;
     }
-    await this.prisma.ingestionSession.update({
-      where: { id: sessionId },
-      data: { status: "imported", confirmedAt: new Date(), importedAt: new Date() },
-    });
     return { importedConceptCount: candidates.length };
   }
 
