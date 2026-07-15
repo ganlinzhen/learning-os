@@ -1,5 +1,7 @@
 # DeepSeek LLM 接入实施计划
 
+> **历史实施计划：** 本文记录最初的 DeepSeek 接入步骤，配置部分已被 LLM 设置页设计取代。现行行为以 `doc/2026-07-15-llm-settings-design.md` 为准：应用与根开发命令通过设置页和共享本地配置运行。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **目标：** 用 DeepSeek API 替换 Generator 的规则候选生成，并在不可用时明确失败。
@@ -12,7 +14,7 @@
 
 - 默认模型必须为 `deepseek-v4-flash`，base URL 必须为 `https://api.deepseek.com`。
 - 只使用 DeepSeek 生成；禁止规则生成、降级、重试和流式输出。
-- API Key 仅存在于被忽略的 `apps/generator/.env`；不得写入测试、示例、日志或 Git 跟踪文件。
+- 应用与根开发命令以设置页和 `LEARNING_OS_LLM_CONFIG_PATH` 指向的共享本地配置为主；API Key 仅保存在用户本地私有配置文件，读取接口不得回显明文，且不得写入测试、示例、日志或 Git 跟踪文件。`apps/generator/.env` 仅在共享配置路径环境变量缺失时作为独立 Generator 的回退。
 - 请求必须启用 JSON 输出，并关闭思考模式。
 - 配置缺失返回 HTTP 503 `deepseek_not_configured`；其他调用或响应错误返回 HTTP 502 `deepseek_generation_failed`。
 
@@ -154,6 +156,8 @@ def generate(request: GenerateRequest, generator: Annotated[DeepSeekGenerator, D
 
 ### 任务 3：提供安全本地配置并进行回归验证
 
+> **历史说明：** 以下 `.env` 步骤仅描述独立运行 Generator 时的遗留回退。应用与根开发命令必须使用设置页保存的共享本地配置；当 `LEARNING_OS_LLM_CONFIG_PATH` 存在时，Generator 不会读取进程环境变量或 `.env`。
+
 **文件：**
 - 创建：`apps/generator/.env.example`
 - 创建（已忽略）：`apps/generator/.env`
@@ -161,8 +165,8 @@ def generate(request: GenerateRequest, generator: Annotated[DeepSeekGenerator, D
 - 修改：`README.md`
 
 **接口：**
-- `.env` 的 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL` 与 `DEEPSEEK_MODEL` 会被 `DeepSeekGenerator.from_environment()` 读取。
-- `python-dotenv==1.1.1` 在启动时加载 Generator 根目录 `.env`，且不覆盖系统环境变量。
+- `DeepSeekGenerator.from_environment()` 在 `LEARNING_OS_LLM_CONFIG_PATH` 存在时读取其指向的共享本地配置；只有该变量缺失时，才读取 `.env` 的 `DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL` 与 `DEEPSEEK_MODEL`。
+- `python-dotenv==1.1.1` 仅在共享配置路径缺失时加载 Generator 根目录 `.env`，且不覆盖系统环境变量。
 
 - [ ] **步骤 1：先写缺失配置测试**
 
