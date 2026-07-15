@@ -1,13 +1,17 @@
 import { Injectable, Optional } from "@nestjs/common";
 import { lookup } from "node:dns/promises";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 import { Readable } from "node:stream";
 
 type DnsAddress = { address: string; family: 4 | 6 };
-type DnsLookup = (hostname: string) => Promise<DnsAddress[]>;
+type DnsLookup = (hostname: string, signal: AbortSignal) => Promise<DnsAddress[]>;
 type RequestImpl = (url: URL, addresses: DnsAddress[], signal: AbortSignal) => Promise<Response>;
+type LookupCallback = {
+  (error: NodeJS.ErrnoException | null, address: string, family: number): void;
+  (error: NodeJS.ErrnoException | null, addresses: DnsAddress[]): void;
+};
 
 type WebContentServiceOptions = {
   fetchImpl?: typeof fetch;
@@ -49,14 +53,24 @@ export class WebContentService {
   }
 
   async fetch(url: string): Promise<{ title: string; content: string }> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(new Error("request_timeout")), 10_000);
+    timeout.unref?.();
+    try {
+      return await this.fetchWithSignal(url, controller.signal);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async fetchWithSignal(url: string, signal: AbortSignal): Promise<{ title: string; content: string }> {
     let currentUrl = this.parseSupportedUrl(url);
     let response: Response | undefined;
 
     for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
-      const addresses = await this.assertPublicDestination(currentUrl);
-      const signal = AbortSignal.timeout(10_000);
+      const addresses = await this.assertPublicDestination(currentUrl, signal);
       try {
-        response = await this.requestImpl(currentUrl, addresses, signal);
+        response = await this.withAbort(this.requestImpl(currentUrl, addresses, signal), signal);
       } catch {
         throw new WebContentError("web_fetch_failed");
       }
@@ -64,6 +78,7 @@ export class WebContentService {
       if (!this.isRedirect(response.status)) {
         break;
       }
+      await this.discardResponse(response, signal);
       if (redirectCount === MAX_REDIRECTS) {
         throw new WebContentError("web_fetch_failed");
       }
@@ -82,15 +97,17 @@ export class WebContentService {
     }
 
     if (!response?.ok) {
+      if (response) await this.discardResponse(response, signal);
       throw new WebContentError("web_fetch_failed");
     }
     if (!response.headers.get("content-type")?.toLowerCase().includes("text/html")) {
+      await this.discardResponse(response, signal);
       throw new WebContentError("web_content_unsupported");
     }
 
     let html: string;
     try {
-      html = await this.readLimitedText(response);
+      html = await this.readLimitedText(response, signal);
     } catch {
       throw new WebContentError("web_fetch_failed");
     }
@@ -122,7 +139,7 @@ export class WebContentService {
     }
   }
 
-  private async assertPublicDestination(url: URL): Promise<DnsAddress[]> {
+  private async assertPublicDestination(url: URL, signal: AbortSignal): Promise<DnsAddress[]> {
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const literalFamily = isIP(hostname);
     let addresses: DnsAddress[];
@@ -131,7 +148,7 @@ export class WebContentService {
       addresses = [{ address: hostname, family: literalFamily as 4 | 6 }];
     } else {
       try {
-        addresses = await this.dnsLookup(hostname);
+        addresses = await this.withAbort(this.dnsLookup(hostname, signal), signal);
       } catch {
         throw new WebContentError("web_fetch_failed");
       }
@@ -157,39 +174,95 @@ export class WebContentService {
 
   private requestAddress(url: URL, address: DnsAddress, signal: AbortSignal): Promise<Response> {
     return new Promise((resolve, reject) => {
+      const hostname = url.hostname.replace(/^\[|\]$/g, "");
+      const requestOptions: RequestOptions & { autoSelectFamily: boolean; servername?: string } = {
+        autoSelectFamily: false,
+        family: address.family,
+        headers: {
+          accept: "text/html,application/xhtml+xml",
+          "accept-encoding": "identity",
+        },
+        lookup: ((_hostname: string, options: { all?: boolean }, callback: LookupCallback) => {
+          if (options.all) {
+            callback(null, [address]);
+            return;
+          }
+          callback(null, address.address, address.family);
+        }) as any,
+        method: "GET",
+        servername: url.protocol === "https:" && !isIP(hostname) ? hostname : undefined,
+        signal,
+      };
       const request = (url.protocol === "https:" ? httpsRequest : httpRequest)(
         url,
-        {
-          headers: {
-            accept: "text/html,application/xhtml+xml",
-            "accept-encoding": "identity",
-          },
-          lookup: ((_hostname: string, _options: unknown, callback: Function) => {
-            callback(null, address.address, address.family);
-          }) as any,
-          method: "GET",
-          signal,
-        },
+        requestOptions,
         (incoming) => {
-          const headers = new Headers();
-          for (const [name, value] of Object.entries(incoming.headers)) {
-            if (Array.isArray(value)) {
-              value.forEach((item) => headers.append(name, item));
-            } else if (value !== undefined) {
-              headers.set(name, value);
-            }
+          try {
+            resolve(this.toResponse(incoming));
+          } catch (error) {
+            incoming.destroy();
+            reject(error);
           }
-          resolve(
-            new Response(Readable.toWeb(incoming) as ReadableStream<Uint8Array>, {
-              headers,
-              status: incoming.statusCode ?? 500,
-              statusText: incoming.statusMessage,
-            }),
-          );
         },
       );
       request.once("error", reject);
       request.end();
+    });
+  }
+
+  private toResponse(incoming: Readable & {
+    headers: Record<string, string | string[] | undefined>;
+    statusCode?: number;
+    statusMessage?: string;
+  }): Response {
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(incoming.headers)) {
+      if (Array.isArray(value)) {
+        value.forEach((item) => headers.append(name, item));
+      } else if (value !== undefined) {
+        headers.set(name, value);
+      }
+    }
+    const status = incoming.statusCode ?? 500;
+    const hasNoBody = status === 204 || status === 205 || status === 304;
+    if (hasNoBody) {
+      incoming.resume();
+    }
+    return new Response(hasNoBody ? null : (Readable.toWeb(incoming) as ReadableStream<Uint8Array>), {
+      headers,
+      status,
+      statusText: incoming.statusMessage,
+    });
+  }
+
+  private async discardResponse(response: Response, signal: AbortSignal): Promise<void> {
+    if (!response.body) return;
+    try {
+      await this.withAbort(response.body.cancel(), signal);
+    } catch {
+      // 释放失败不覆盖原始业务错误。
+    }
+  }
+
+  private withAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(signal.reason ?? new Error("request_timeout"));
+      if (signal.aborted) {
+        operation.catch(() => undefined);
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+      operation.then(
+        (value) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        (error) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(error);
+        },
+      );
     });
   }
 
@@ -269,13 +342,14 @@ export class WebContentService {
     return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
   }
 
-  private async readLimitedText(response: Response): Promise<string> {
+  private async readLimitedText(response: Response, signal: AbortSignal): Promise<string> {
     const declaredLength = Number(response.headers.get("content-length"));
     if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
+      await this.discardResponse(response, signal);
       throw new WebContentError("web_fetch_failed");
     }
     if (!response.body) {
-      const text = await response.text();
+      const text = await this.withAbort(response.text(), signal);
       if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
         throw new WebContentError("web_fetch_failed");
       }
@@ -286,15 +360,20 @@ export class WebContentService {
     const decoder = new TextDecoder();
     let receivedBytes = 0;
     let text = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      receivedBytes += value.byteLength;
-      if (receivedBytes > MAX_RESPONSE_BYTES) {
-        await reader.cancel().catch(() => undefined);
-        throw new WebContentError("web_fetch_failed");
+    try {
+      while (true) {
+        const { done, value } = await this.withAbort(reader.read(), signal);
+        if (done) break;
+        receivedBytes += value.byteLength;
+        if (receivedBytes > MAX_RESPONSE_BYTES) {
+          await this.withAbort(reader.cancel(), signal).catch(() => undefined);
+          throw new WebContentError("web_fetch_failed");
+        }
+        text += decoder.decode(value, { stream: true });
       }
-      text += decoder.decode(value, { stream: true });
+    } catch (error) {
+      await this.withAbort(reader.cancel(), signal).catch(() => undefined);
+      throw error;
     }
     return text + decoder.decode();
   }
