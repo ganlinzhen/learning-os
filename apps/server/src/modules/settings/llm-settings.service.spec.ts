@@ -1,5 +1,7 @@
 import { BadRequestException, InternalServerErrorException } from "@nestjs/common";
+import { OPTIONAL_DEPS_METADATA } from "@nestjs/common/constants";
 import { Test } from "@nestjs/testing";
+import "reflect-metadata";
 import { mkdtempSync } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -38,6 +40,10 @@ describe("LlmSettingsService", () => {
     }).compile();
 
     expect(module.get(LlmSettingsService)).toBeInstanceOf(LlmSettingsService);
+  });
+
+  it("将测试文件系统声明为 Nest 可选依赖", () => {
+    expect(Reflect.getMetadata(OPTIONAL_DEPS_METADATA, LlmSettingsService)).toContain(1);
   });
 
   it("拒绝损坏的本地配置 JSON", async () => {

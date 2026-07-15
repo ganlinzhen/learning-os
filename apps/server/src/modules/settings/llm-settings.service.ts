@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, InternalServerErrorException, Optional } from "@nestjs/common";
 import { LlmSettingsDto, UpdateLlmSettingsDto } from "@learning-os/contracts";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
@@ -22,7 +22,7 @@ export class LlmSettingsService {
 
   constructor(
     @Inject(AppConfigService) private readonly config: AppConfigService,
-    fileSystem: Partial<LlmSettingsFileSystem> = {},
+    @Optional() fileSystem: Partial<LlmSettingsFileSystem> = {},
   ) {
     this.fileSystem = { ...DEFAULT_FILE_SYSTEM, ...fileSystem };
   }
