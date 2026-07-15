@@ -8,4 +8,5 @@ export class AppConfigService {
   readonly agentBaseUrl = process.env.LEARNING_OS_AGENT_URL ?? "http://127.0.0.1:8000";
   readonly databasePath = process.env.LEARNING_OS_DB_PATH ?? join(this.appRootDir, "data", "learning-os.db");
   readonly databaseUrl = process.env.DATABASE_URL ?? `file:${this.databasePath}`;
+  readonly llmConfigPath = process.env.LEARNING_OS_LLM_CONFIG_PATH ?? join(this.appRootDir, "settings", "llm.json");
 }
