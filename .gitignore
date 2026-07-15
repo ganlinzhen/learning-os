@@ -4,6 +4,8 @@ node_modules/
 # pnpm / monorepo 缓存
 .pnpm-store/
 .turbo/
+.superpowers/
+*.tsbuildinfo
 
 # Python 虚拟环境与缓存
 .venv/
@@ -24,6 +26,7 @@ dist/
 build/
 out/
 .next/
+packages/contracts/src/*.js
 
 # 测试与覆盖率产物
 coverage/
