@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, ipcMain } from "electron";
+import { isTrustedRendererUrl } from "./navigation-policy.js";
 import { resolveRuntimePaths } from "./runtime-paths.js";
 import { ServiceSupervisor } from "./service-supervisor.js";
 
@@ -23,9 +24,20 @@ function createMainWindow(webUrl: string, apiToken: string) {
     },
   });
 
+  window.webContents.on("will-navigate", (event, targetUrl) => {
+    if (!isTrustedRendererUrl(targetUrl, webUrl)) {
+      event.preventDefault();
+    }
+  });
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+
   ipcMain.removeHandler("learning-os:get-api-token");
   ipcMain.handle("learning-os:get-api-token", (event) => {
-    if (event.sender.id !== window.webContents.id) {
+    if (
+      event.sender.id !== window.webContents.id
+      || event.senderFrame !== window.webContents.mainFrame
+      || !isTrustedRendererUrl(event.senderFrame.url, webUrl)
+    ) {
       throw new Error("未授权的桌面令牌请求");
     }
     return apiToken;
@@ -54,11 +66,15 @@ async function main() {
     });
   }
 
-  createMainWindow(process.env.LEARNING_OS_WEB_URL ?? paths.webUrl, apiToken);
+  const webUrl = process.env.LEARNING_OS_WEB_URL ?? paths.webUrl;
+  if (!isTrustedRendererUrl(webUrl, paths.webUrl)) {
+    throw new Error("桌面应用 URL 不受信任");
+  }
+  createMainWindow(webUrl, apiToken);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow(process.env.LEARNING_OS_WEB_URL ?? paths.webUrl, apiToken);
+      createMainWindow(webUrl, apiToken);
     }
   });
 

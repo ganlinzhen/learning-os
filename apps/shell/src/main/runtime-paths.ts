@@ -53,7 +53,7 @@ export function resolveRuntimePaths(input: ResolveRuntimePathsInput): RuntimePat
           "8000",
         ],
         cwd: process.cwd(),
-        env: { LEARNING_OS_LLM_CONFIG_PATH: llmConfigPath, LEARNING_OS_API_TOKEN: input.apiToken },
+        env: { LEARNING_OS_LLM_CONFIG_PATH: llmConfigPath },
       },
     };
   }
@@ -74,7 +74,7 @@ export function resolveRuntimePaths(input: ResolveRuntimePathsInput): RuntimePat
       command: join(resourcesDir, "generator", "learning-os-generator"),
       args: [],
       cwd: join(resourcesDir, "generator"),
-      env: { LEARNING_OS_LLM_CONFIG_PATH: llmConfigPath, LEARNING_OS_API_TOKEN: input.apiToken },
+      env: { LEARNING_OS_LLM_CONFIG_PATH: llmConfigPath },
     },
   };
 }

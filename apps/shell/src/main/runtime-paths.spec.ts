@@ -22,6 +22,7 @@ describe("resolveRuntimePaths", () => {
     expect(paths.generatorCommand.env.LEARNING_OS_LLM_CONFIG_PATH).toBe(
       paths.serverCommand.env.LEARNING_OS_LLM_CONFIG_PATH,
     );
+    expect(paths.generatorCommand.env).not.toHaveProperty("LEARNING_OS_API_TOKEN");
     expect(paths.generatorCommand.command).toBe("python3.11");
   });
 
@@ -77,5 +78,6 @@ describe("resolveRuntimePaths", () => {
     expect(paths.generatorCommand.env.LEARNING_OS_LLM_CONFIG_PATH).toBe(
       paths.serverCommand.env.LEARNING_OS_LLM_CONFIG_PATH,
     );
+    expect(paths.generatorCommand.env).not.toHaveProperty("LEARNING_OS_API_TOKEN");
   });
 });
