@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type { LlmSettingsDto, UpdateLlmSettingsDto } from "@learning-os/contracts";
 import { apiClient } from "../../shared/api/api-client";
 
@@ -30,6 +30,8 @@ export function SettingsPage() {
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [clearErrorMessage, setClearErrorMessage] = useState("");
+  const clearDialogRef = useRef<HTMLDialogElement>(null);
 
   const applySettings = (settings: LlmSettingsDto) => {
     setBaseUrl(settings.baseUrl);
@@ -63,6 +65,20 @@ export function SettingsPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    const dialog = clearDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+
+    if (clearDialogOpen && !dialog.open) {
+      dialog.showModal();
+    }
+    if (!clearDialogOpen && dialog.open) {
+      dialog.close();
+    }
+  }, [clearDialogOpen]);
 
   const createPayload = (): UpdateLlmSettingsDto | null => {
     const trimmedBaseUrl = baseUrl.trim();
@@ -118,12 +134,13 @@ export function SettingsPage() {
     setPending(true);
     setMessage("");
     setErrorMessage("");
+    setClearErrorMessage("");
     try {
       applySettings(await apiClient.clearLlmApiKey());
       setClearDialogOpen(false);
       setMessage("API Key 已清除。");
     } catch {
-      setErrorMessage("清除 API Key 失败，请稍后重试。");
+      setClearErrorMessage("清除 API Key 失败，请稍后重试。");
     } finally {
       setPending(false);
     }
@@ -157,7 +174,7 @@ export function SettingsPage() {
                 <div className="settings-key-status" aria-live="polite">
                   <span>{apiKeyConfigured ? "已配置" : "未配置"}</span>
                   {apiKeyConfigured ? (
-                    <button disabled={pending} onClick={() => setClearDialogOpen(true)} type="button">
+                    <button disabled={pending} onClick={() => { setClearErrorMessage(""); setClearDialogOpen(true); }} type="button">
                       清除 API Key
                     </button>
                   ) : null}
@@ -219,10 +236,17 @@ export function SettingsPage() {
         </section>
       ) : null}
 
-      <dialog aria-labelledby="clear-api-key-title" className="settings-dialog" onClose={() => setClearDialogOpen(false)} open={clearDialogOpen}>
+      <dialog
+        aria-labelledby="clear-api-key-title"
+        className="settings-dialog"
+        onCancel={(event) => { event.preventDefault(); setClearDialogOpen(false); }}
+        onClose={() => { setClearErrorMessage(""); setClearDialogOpen(false); }}
+        ref={clearDialogRef}
+      >
         <form method="dialog" onSubmit={(event) => { event.preventDefault(); void clearApiKey(); }}>
           <h2 id="clear-api-key-title">清除 API Key？</h2>
           <p>清除后，后续模型请求将无法使用当前密钥，直到重新保存新的密钥。</p>
+          {clearErrorMessage ? <p className="settings-message settings-message-error" role="alert">{clearErrorMessage}</p> : null}
           <div className="settings-dialog-actions">
             <button disabled={pending} onClick={() => setClearDialogOpen(false)} type="button">取消</button>
             <button disabled={pending} type="submit">确认清除</button>

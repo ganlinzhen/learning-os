@@ -1,8 +1,21 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
-import { AppShell } from "./app-shell";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routes } from "./router";
+
+vi.mock("../shared/api/api-client", () => ({
+  apiClient: { getLlmSettings: vi.fn() },
+}));
+
+beforeEach(async () => {
+  const { apiClient } = await import("../shared/api/api-client");
+  vi.mocked(apiClient.getLlmSettings).mockResolvedValue({
+    provider: "deepseek",
+    apiKeyConfigured: true,
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-v4-flash",
+  });
+});
 
 describe("console routes", () => {
   it("exposes top-level shell route and primary children", () => {
@@ -19,13 +32,13 @@ describe("console routes", () => {
     ]);
   });
 
-  it("在侧栏中提供设置入口", () => {
+  it("在 /settings 路由渲染设置页面", async () => {
+    const router = createMemoryRouter(routes, { initialEntries: ["/settings"] });
     render(
-      <MemoryRouter>
-        <AppShell />
-      </MemoryRouter>,
+      <RouterProvider router={router} />,
     );
 
-    expect(screen.getByRole("link", { name: "设置" })).toHaveAttribute("href", "/settings");
+    expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/settings");
   });
 });

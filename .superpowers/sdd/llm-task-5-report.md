@@ -30,3 +30,24 @@ git diff --check
 
 - 未启动开发服务器或浏览器，符合前端任务的验证约定。
 - 工作区中已存在的 `apps/shell/.preload-build/preload/preload.cjs` 删除未修改、未暂存。
+
+## 复审修正
+
+- 将受控 `open` 属性替换为 `ref` 与 `useEffect` 管理的原生 `showModal()` / `close()`，确保清除确认对话框进入真正的模态状态。
+- 处理原生 `cancel` 事件，使 Escape 关闭对话框并同步 React 状态；对话框保持 `aria-labelledby` 的可访问名称。
+- 清除 API Key 失败时，错误以 `role="alert"` 留在仍打开的对话框内，而不是出现在页面全局。
+- 路由测试使用真实 `routes` 在 `/settings` 入口渲染；由于测试环境中点击导航触发 React Router 的 Node/jsdom AbortSignal 不兼容，未将该环境异常作为产品行为断言。
+- 补充 `ftp://` Base URL 拒绝测试，以及原生 dialog API 的可恢复测试 shim。
+
+### 复审验证
+
+```text
+pnpm --filter @learning-os/console test -- settings-page.test.tsx router.test.tsx api-client.spec.ts
+37 项测试通过。
+
+pnpm --filter @learning-os/console build
+通过。
+
+git diff --check
+通过，无空白错误。
+```

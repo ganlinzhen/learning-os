@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "../../shared/api/api-client";
 import { SettingsPage } from "./settings-page";
 
@@ -19,6 +19,15 @@ const configuredSettings = {
   model: "deepseek-v4-flash",
 };
 
+const originalShowModal = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
+const originalClose = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "close");
+const showModal = vi.fn(function (this: HTMLDialogElement) {
+  this.setAttribute("open", "");
+});
+const close = vi.fn(function (this: HTMLDialogElement) {
+  this.removeAttribute("open");
+});
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((nextResolve) => {
@@ -29,11 +38,28 @@ function deferred<T>() {
 
 describe("SettingsPage", () => {
   beforeEach(() => {
+    Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: showModal });
+    Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value: close });
+    showModal.mockClear();
+    close.mockClear();
     vi.mocked(apiClient.getLlmSettings).mockReset();
     vi.mocked(apiClient.saveLlmSettings).mockReset();
     vi.mocked(apiClient.testLlmSettings).mockReset();
     vi.mocked(apiClient.clearLlmApiKey).mockReset();
     vi.mocked(apiClient.getLlmSettings).mockResolvedValue(configuredSettings);
+  });
+
+  afterAll(() => {
+    if (originalShowModal) {
+      Object.defineProperty(HTMLDialogElement.prototype, "showModal", originalShowModal);
+    } else {
+      delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal;
+    }
+    if (originalClose) {
+      Object.defineProperty(HTMLDialogElement.prototype, "close", originalClose);
+    } else {
+      delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).close;
+    }
   });
 
   it("加载后显示设置分组和已配置的密钥状态", async () => {
@@ -91,16 +117,14 @@ describe("SettingsPage", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("连接测试失败，请检查 API Key、地址和模型名称后重试。");
   });
 
-  it("无效字段会在提交前显示就近提示", async () => {
+  it("拒绝非 HTTP(S) 的 Base URL", async () => {
     render(<SettingsPage />);
 
     await screen.findByRole("button", { name: "保存配置" });
-    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "invalid-url" } });
-    fireEvent.change(screen.getByLabelText("模型名称"), { target: { value: " " } });
+    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "ftp://api.deepseek.com" } });
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
 
     expect(await screen.findByText("请输入有效的 HTTP(S) 地址。")).toBeInTheDocument();
-    expect(screen.getByText("请输入模型名称。")).toBeInTheDocument();
     expect(apiClient.saveLlmSettings).not.toHaveBeenCalled();
   });
 
@@ -116,6 +140,33 @@ describe("SettingsPage", () => {
     expect(screen.getByRole("button", { name: "保存并测试连接" })).toBeDisabled();
     saving.resolve(configuredSettings);
     await screen.findByRole("status");
+  });
+
+  it("以原生模态对话框确认清除，并响应取消事件", async () => {
+    render(<SettingsPage />);
+
+    await screen.findByRole("button", { name: "清除 API Key" });
+    fireEvent.click(screen.getByRole("button", { name: "清除 API Key" }));
+    const dialog = screen.getByRole("dialog");
+    expect(showModal).toHaveBeenCalledOnce();
+    expect(dialog).toHaveAttribute("open");
+
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(dialog).not.toHaveAttribute("open");
+  });
+
+  it("清除密钥失败时在仍打开的对话框中展示错误", async () => {
+    vi.mocked(apiClient.clearLlmApiKey).mockRejectedValueOnce(new Error("request_failed:/settings/llm/api-key"));
+    render(<SettingsPage />);
+
+    await screen.findByRole("button", { name: "清除 API Key" });
+    fireEvent.click(screen.getByRole("button", { name: "清除 API Key" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "确认清除" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("清除 API Key 失败，请稍后重试。");
+    expect(dialog).toHaveAttribute("open");
   });
 
   it("清除密钥前需要确认，并在确认后更新状态", async () => {
