@@ -225,6 +225,10 @@ export class IngestionService {
 
     try {
       await this.prisma.transaction(async (tx: any) => {
+        const claimedSession = await tx.claimReviewableIngestion(sessionId);
+        if (!claimedSession) {
+          throw new BadRequestException("仅可确认待审核的导入");
+        }
         for (const [index, item] of imports.entries()) {
           await tx.concept.create({
             data: {
@@ -259,13 +263,11 @@ export class IngestionService {
             },
           });
         }
-        const confirmedAt = new Date();
         await tx.ingestionSession.update({
           where: { id: sessionId },
           data: {
             status: "imported",
-            confirmedAt,
-            importedAt: confirmedAt,
+            importedAt: new Date(),
           },
         });
       });

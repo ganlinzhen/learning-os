@@ -31,6 +31,11 @@ const candidate = {
 
 function createContext(options?: { status?: string; candidates?: typeof candidate[] }) {
   const tx = {
+    claimReviewableIngestion: vi.fn().mockResolvedValue({
+      id: "session_1",
+      status: "confirmed",
+      confirmedAt: "2026-07-15T00:00:00.000Z",
+    }),
     concept: { create: vi.fn().mockImplementation(async ({ data }: any) => data) },
     reviewCard: { create: vi.fn().mockImplementation(async ({ data }: any) => data) },
     note: { create: vi.fn().mockImplementation(async ({ data }: any) => data) },
@@ -90,6 +95,10 @@ describe("confirmIngestion", () => {
     expect(noteInputs[0].conceptId).toEqual(expect.any(String));
     expect(noteInputs[0].cards).toHaveLength(1);
     expect(prisma.transaction).toHaveBeenCalledTimes(1);
+    expect(tx.claimReviewableIngestion).toHaveBeenCalledWith("session_1");
+    expect(tx.claimReviewableIngestion.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.concept.create.mock.invocationCallOrder[0],
+    );
     expect(tx.concept.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         id: noteInputs[0].conceptId,
@@ -114,7 +123,7 @@ describe("confirmIngestion", () => {
     });
     expect(tx.ingestionSession.update).toHaveBeenCalledWith({
       where: { id: "session_1" },
-      data: { status: "imported", confirmedAt: expect.any(Date), importedAt: expect.any(Date) },
+      data: { status: "imported", importedAt: expect.any(Date) },
     });
     expect(storage.removeFiles).not.toHaveBeenCalled();
   });
@@ -153,6 +162,76 @@ describe("confirmIngestion", () => {
     ).rejects.toThrow("sqlite_failed");
 
     expect(storage.removeFiles).toHaveBeenCalledWith(["/tmp/notes/RSC-concept_1.md"]);
+  });
+
+  it("两个确认请求都读到 reviewable 时仅一个事务能抢占，失败请求不写数据库并删除其 Markdown", async () => {
+    const txs = [0, 1].map(() => ({
+      claimReviewableIngestion: vi.fn(),
+      concept: { create: vi.fn().mockImplementation(async ({ data }: any) => data) },
+      reviewCard: { create: vi.fn().mockImplementation(async ({ data }: any) => data) },
+      note: { create: vi.fn().mockImplementation(async ({ data }: any) => data) },
+      ingestionSession: { update: vi.fn().mockImplementation(async ({ data }: any) => data) },
+    }));
+    let claimed = false;
+    for (const tx of txs) {
+      tx.claimReviewableIngestion.mockImplementation(async () => {
+        if (claimed) return null;
+        claimed = true;
+        return { id: "session_1", status: "confirmed" };
+      });
+    }
+    let transactionIndex = 0;
+    const prisma = {
+      ingestionSession: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "session_1",
+          sourceId: "source_1",
+          status: "reviewable",
+          source: { id: "source_1" },
+        }),
+      },
+      conceptCandidate: { findMany: vi.fn().mockResolvedValue([candidate]) },
+      transaction: vi.fn().mockImplementation(async (work: (client: (typeof txs)[number]) => Promise<unknown>) => {
+        const tx = txs[transactionIndex++];
+        return work(tx);
+      }),
+    };
+    let releaseWrites!: () => void;
+    const bothWritesStarted = new Promise<void>((resolve) => {
+      releaseWrites = resolve;
+    });
+    const writtenPaths: string[] = [];
+    const storage = {
+      writeNotes: vi.fn().mockImplementation(async ([input]: any[]) => {
+        const localPath = `/tmp/notes/${input.conceptId}.md`;
+        writtenPaths.push(localPath);
+        if (writtenPaths.length === 2) releaseWrites();
+        await bothWritesStarted;
+        return [{ title: input.title, content: `# ${input.title}`, localPath }];
+      }),
+      removeFiles: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new IngestionService(prisma as any, storage as any, {} as any);
+
+    const results = await Promise.allSettled([
+      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"] }),
+      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"] }),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult;
+    expect(rejected.reason).toEqual(new BadRequestException("仅可确认待审核的导入"));
+    expect(storage.writeNotes).toHaveBeenCalledTimes(2);
+    expect(prisma.transaction).toHaveBeenCalledTimes(2);
+    const rejectedTx = txs.find((tx) => tx.concept.create.mock.calls.length === 0)!;
+    expect(rejectedTx.claimReviewableIngestion).toHaveBeenCalledWith("session_1");
+    expect(rejectedTx.concept.create).not.toHaveBeenCalled();
+    expect(rejectedTx.note.create).not.toHaveBeenCalled();
+    expect(rejectedTx.ingestionSession.update).not.toHaveBeenCalled();
+    expect(txs.flatMap((tx) => tx.concept.create.mock.calls)).toHaveLength(1);
+    expect(txs.flatMap((tx) => tx.note.create.mock.calls)).toHaveLength(1);
+    expect(storage.removeFiles).toHaveBeenCalledTimes(1);
+    expect(storage.removeFiles).toHaveBeenCalledWith([writtenPaths[txs.indexOf(rejectedTx)]]);
   });
 
   it.each(["processing", "imported"])("拒绝 %s 状态的确认", async (status) => {

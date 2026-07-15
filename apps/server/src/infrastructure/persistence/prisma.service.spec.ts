@@ -102,6 +102,51 @@ describe("PrismaService", () => {
     await second.onModuleDestroy();
   });
 
+  it("两个 SQLite 连接竞争待审核会话时仅一个能原子抢占为 confirmed", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "learning-os-confirm-claim-"));
+    const config = {
+      appRootDir: rootDir,
+      databasePath: join(rootDir, "data", "learning-os.db"),
+    } as any;
+    const first = new PrismaService(config);
+    const second = new PrismaService(config);
+    await first.onModuleInit();
+    await second.onModuleInit();
+    const source = await first.source.create({
+      data: {
+        type: "text",
+        title: "待审核来源",
+        localPath: "/tmp/reviewable-source.txt",
+        contentHash: "reviewable-hash",
+        status: "stored",
+        content: "待审核正文",
+      },
+    });
+    const session = await first.ingestionSession.create({
+      data: { sourceId: source.id, status: "reviewable" },
+    });
+
+    const claims = await Promise.all([
+      first.claimReviewableIngestion(session.id),
+      second.claimReviewableIngestion(session.id),
+    ]);
+
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claims.find(Boolean)).toMatchObject({
+      id: session.id,
+      status: "confirmed",
+      confirmedAt: expect.any(String),
+    });
+    await expect(first.claimReviewableIngestion(session.id)).resolves.toBeNull();
+    await expect(first.ingestionSession.findUnique({ where: { id: session.id } })).resolves.toMatchObject({
+      status: "confirmed",
+      confirmedAt: expect.any(String),
+      importedAt: undefined,
+    });
+    await first.onModuleDestroy();
+    await second.onModuleDestroy();
+  });
+
   it("按会话清除旧卡片候选", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "learning-os-card-candidate-delete-"));
     const service = new PrismaService({

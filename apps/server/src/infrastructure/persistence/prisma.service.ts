@@ -521,6 +521,20 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     return row ? this.mapAgentTask(row) : null;
   }
 
+  async claimReviewableIngestion(sessionId: string) {
+    const db = await this.getDb();
+    const now = new Date().toISOString();
+    const row = db
+      .prepare(
+        `update ingestion_sessions
+         set status = 'confirmed', confirmed_at = ?, updated_at = ?
+         where id = ? and status = 'reviewable'
+         returning *`,
+      )
+      .get(now, now, sessionId) as QueryRow | undefined;
+    return row ? this.mapIngestionSession(row) : null;
+  }
+
   async claimFailedIngestionRetry(sessionId: string) {
     const db = await this.getDb();
     let transactionStarted = false;

@@ -85,3 +85,42 @@ rtk pnpm --filter @learning-os/server test -- storage.service.spec.ts confirm-in
 
 - 文件系统与 SQLite 无法组成同一个原生事务，本任务按简报采用“文件先写 + 数据库事务 + 失败删除文件”的补偿策略。若底层文件删除本身发生非 `ENOENT` 错误，`removeFiles` 会显式抛出，可能需要人工清理残留文件；不会静默忽略。
 - 当前持久层对候选记录使用宽类型，Task 4 仅为本地中间结构补充最小类型，没有在本任务范围外重构 persistence facade。
+
+## P1 修复：并发确认原子抢占
+
+### 根因
+
+原实现只在事务外读取并校验 `reviewable`。两个确认请求可能同时通过该校验并分别写入 Markdown；虽然 SQLite 会串行执行两个写事务，但后进入的事务没有再次校验会话状态，仍会重复创建 Concept、ReviewCard 与 Note。
+
+### RED
+
+先补测试、未修改生产代码时运行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts confirm-ingestion.spec.ts
+```
+
+结果：退出码 1；3 个测试失败。失败分别证明 persistence facade 缺少原子抢占方法、确认事务未调用抢占，以及两个同时从 `reviewable` 开始的确认请求都会成功。
+
+新增覆盖：
+
+- 两个真实 SQLite 连接竞争同一 `reviewable` 会话时，CAS 只能成功一次。
+- 两个确认请求均完成事务外读取和 Markdown 写入后，只有一个事务可抢占；失败事务不创建 Concept/Note，并删除该请求生成的 Markdown。
+- 成功事务必须在创建 Concept 前抢占，会话最终由 `confirmed` 更新为 `imported`，且 `confirmedAt` 保留。
+- 已为 `imported` 的顺序重复确认仍在文件写入和事务开始前被拒绝。
+
+### GREEN
+
+- `PrismaService.claimReviewableIngestion(sessionId)` 在当前连接上执行单条 `UPDATE ingestion_sessions SET status='confirmed', confirmed_at=?, updated_at=? WHERE id=? AND status='reviewable' RETURNING *`；未命中返回 `null`。
+- `confirmIngestion` 在事务回调开始、创建任何 Concept 前通过 `tx` 调用该方法；未抢占到时抛出 `BadRequestException("仅可确认待审核的导入")`，现有 catch 随即删除该请求写入的 Markdown。
+- 成功路径最后只写 `status: "imported"` 与 `importedAt`，由 persistence update 保留抢占阶段写入的 `confirmedAt`。
+
+验证：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- prisma.service.spec.ts confirm-ingestion.spec.ts
+rtk pnpm --filter @learning-os/server lint
+rtk git diff --check
+```
+
+结果：均退出码 0；测试共 12 个文件、60 个测试全部通过，服务端类型检查无错误，差异格式检查无错误。
