@@ -82,7 +82,11 @@ def test_generate_returns_502_when_deepseek_generation_fails():
 def test_test_connection_returns_ok():
     app.dependency_overrides[get_generator] = lambda: DeepSeekGenerator(
         api_key="test-key",
-        client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200))),
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]}),
+            ),
+        ),
     )
 
     response = TestClient(app).post("/test-connection")
@@ -104,6 +108,18 @@ def test_test_connection_returns_502_when_upstream_fails():
     app.dependency_overrides[get_generator] = lambda: DeepSeekGenerator(
         api_key="test-key",
         client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(500))),
+    )
+
+    response = TestClient(app).post("/test-connection")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "deepseek_generation_failed"}
+
+
+def test_test_connection_returns_502_when_chat_completion_response_is_invalid():
+    app.dependency_overrides[get_generator] = lambda: DeepSeekGenerator(
+        api_key="test-key",
+        client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))),
     )
 
     response = TestClient(app).post("/test-connection")

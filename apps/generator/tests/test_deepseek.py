@@ -213,7 +213,7 @@ def test_test_connection_posts_small_non_streaming_request():
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured["request"] = request
-        return httpx.Response(200)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "pong"}}]})
 
     generator = DeepSeekGenerator(
         api_key="key",
@@ -264,6 +264,24 @@ def test_test_connection_normalizes_invalid_response_format():
             return object()
 
     generator = DeepSeekGenerator(api_key="key", client=InvalidResponseClient())
+
+    with pytest.raises(DeepSeekGenerationError):
+        generator.test_connection()
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(200, json={}),
+        httpx.Response(200, content=b"not json"),
+        httpx.Response(200, json={"choices": [{}]}),
+    ],
+)
+def test_test_connection_rejects_invalid_chat_completion_response(response):
+    generator = DeepSeekGenerator(
+        api_key="key",
+        client=httpx.Client(transport=httpx.MockTransport(lambda _: response)),
+    )
 
     with pytest.raises(DeepSeekGenerationError):
         generator.test_connection()

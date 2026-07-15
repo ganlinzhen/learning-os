@@ -110,7 +110,10 @@ class DeepSeekGenerator:
                 },
             )
             response.raise_for_status()
-        except (httpx.HTTPError, AttributeError, RuntimeError, TypeError, ValueError) as error:
+            content = response.json()["choices"][0]["message"]["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("empty_content")
+        except (httpx.HTTPError, AttributeError, KeyError, IndexError, RuntimeError, TypeError, ValueError) as error:
             raise DeepSeekGenerationError() from error
 
     @staticmethod
