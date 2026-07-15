@@ -8,7 +8,7 @@
     "build:package": "pnpm --filter @learning-os/console build && pnpm --filter @learning-os/server build:prod && bash apps/generator/scripts/build-macos.sh && pnpm --filter @learning-os/shell build:prod",
     "dev": "pnpm run dev:web",
     "dev:web": "LEARNING_OS_LLM_CONFIG_PATH=\"${PWD}/.learning-os/settings/llm.json\" turbo run dev:console dev:server dev:generator",
-    "dev:desktop": "turbo run dev:console dev:server dev:generator dev:shell",
+    "dev:desktop": "LEARNING_OS_LLM_CONFIG_PATH=\"${PWD}/.learning-os/settings/llm.json\" turbo run dev:console dev:server dev:generator dev:shell",
     "dev:shell": "turbo run dev:shell --filter=@learning-os/shell",
     "dev:console": "turbo run dev:console --filter=@learning-os/console",
     "dev:generator": "LEARNING_OS_LLM_CONFIG_PATH=\"${PWD}/.learning-os/settings/llm.json\"; export LEARNING_OS_LLM_CONFIG_PATH; cd apps/generator && ../../.venv/bin/python -m uvicorn learning_os_generator.api.app:app --app-dir src --host 127.0.0.1 --port 8000",

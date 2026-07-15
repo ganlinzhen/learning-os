@@ -35,6 +35,9 @@ describe("resolveRuntimePaths", () => {
     expect(packageJson.scripts["dev:web"]).toBe(
       `${envPrefix} turbo run dev:console dev:server dev:generator`,
     );
+    expect(packageJson.scripts["dev:desktop"]).toBe(
+      `${envPrefix} turbo run dev:console dev:server dev:generator dev:shell`,
+    );
     expect(packageJson.scripts["dev:server"]).toBe(
       `${envPrefix} turbo run dev:server --filter=@learning-os/server`,
     );
