@@ -24,4 +24,31 @@ describe("apiClient", () => {
       method: "POST",
     });
   });
+
+  it("调用 LLM 设置接口", async () => {
+    const input = { apiKey: "new-key", baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" };
+
+    await apiClient.getLlmSettings();
+    await apiClient.saveLlmSettings(input);
+    await apiClient.testLlmSettings(input);
+    await apiClient.clearLlmApiKey();
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "http://127.0.0.1:3000/settings/llm", {
+      headers: { "content-type": "application/json" },
+    });
+    expect(fetch).toHaveBeenNthCalledWith(2, "http://127.0.0.1:3000/settings/llm", {
+      headers: { "content-type": "application/json" },
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(3, "http://127.0.0.1:3000/settings/llm/test", {
+      headers: { "content-type": "application/json" },
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    expect(fetch).toHaveBeenNthCalledWith(4, "http://127.0.0.1:3000/settings/llm/api-key", {
+      headers: { "content-type": "application/json" },
+      method: "DELETE",
+    });
+  });
 });

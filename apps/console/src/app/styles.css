@@ -107,6 +107,232 @@ legend {
   gap: 12px;
 }
 
+.settings-page {
+  max-width: 820px;
+  padding: 32px 0 72px;
+}
+
+.settings-page-header {
+  margin-bottom: 56px;
+}
+
+.settings-page-header h1,
+.settings-section-heading h2 {
+  margin: 0;
+  color: #173f35;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.settings-page-header h1 {
+  font-size: 2rem;
+}
+
+.settings-page-header p,
+.settings-section-heading p,
+.settings-row-copy p {
+  color: #486581;
+}
+
+.settings-page-header p {
+  margin: 10px 0 0;
+}
+
+.settings-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.settings-section-heading h2 {
+  font-size: 1.125rem;
+}
+
+.settings-section-heading p {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.875rem;
+}
+
+.settings-panel {
+  overflow: hidden;
+  border: 1px solid rgba(23, 63, 53, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.78fr) minmax(280px, 1.22fr);
+  gap: 32px;
+  padding: 24px;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid rgba(23, 63, 53, 0.12);
+}
+
+.settings-row-copy label {
+  color: #102a43;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}
+
+.settings-row-copy p {
+  margin: 8px 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.settings-row-control {
+  min-width: 0;
+}
+
+.settings-row-control input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid rgba(23, 63, 53, 0.3);
+  border-radius: 8px;
+  background: #fff;
+  color: #102a43;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.settings-row-control input:focus-visible,
+.settings-actions button:focus-visible,
+.settings-key-status button:focus-visible,
+.settings-dialog button:focus-visible {
+  outline: 3px solid rgba(59, 130, 112, 0.42);
+  outline-offset: 2px;
+}
+
+.settings-key-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: #356859;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.settings-key-status button,
+.settings-actions button,
+.settings-dialog button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid #173f35;
+  border-radius: 8px;
+  background: #173f35;
+  color: #fff;
+  cursor: pointer;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+}
+
+.settings-key-status button {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #356859;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 20px 24px;
+  border-top: 1px solid rgba(23, 63, 53, 0.12);
+}
+
+.settings-actions button + button,
+.settings-dialog button:first-child {
+  background: #fff;
+  color: #173f35;
+}
+
+.settings-actions button:disabled,
+.settings-key-status button:disabled,
+.settings-dialog button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-message,
+.field-error {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.settings-message {
+  margin: 0 0 20px;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.settings-message-success {
+  background: #e8f4ee;
+  color: #1e5b47;
+}
+
+.settings-message-error,
+.field-error {
+  color: #9b2c2c;
+}
+
+.settings-message-error {
+  background: #fff1f1;
+}
+
+.field-error {
+  margin: 6px 0 0;
+  font-size: 0.8125rem;
+}
+
+.settings-dialog {
+  width: min(440px, calc(100vw - 40px));
+  padding: 0;
+  border: 1px solid rgba(23, 63, 53, 0.2);
+  border-radius: 12px;
+  color: #102a43;
+}
+
+.settings-dialog::backdrop {
+  background: rgba(16, 42, 67, 0.25);
+}
+
+.settings-dialog form {
+  padding: 24px;
+}
+
+.settings-dialog h2 {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 1.125rem;
+}
+
+.settings-dialog p {
+  margin: 12px 0 0;
+  color: #486581;
+  line-height: 1.5;
+}
+
+.settings-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -115,5 +341,28 @@ legend {
   .sidebar,
   .content {
     padding: 20px;
+  }
+
+  .settings-page {
+    padding-top: 8px;
+  }
+
+  .settings-page-header {
+    margin-bottom: 36px;
+  }
+
+  .settings-row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 20px;
+  }
+
+  .settings-actions {
+    justify-content: stretch;
+    padding: 16px 20px;
+  }
+
+  .settings-actions button {
+    flex: 1 1 180px;
   }
 }

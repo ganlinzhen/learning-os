@@ -5,6 +5,7 @@ import { ConceptDetailPage } from "../features/library/concept-detail-page";
 import { LibraryPage } from "../features/library/library-page";
 import { ReviewPage } from "../features/review/review-page";
 import { SearchPage } from "../features/search/search-page";
+import { SettingsPage } from "../features/settings/settings-page";
 import { AppShell } from "./app-shell";
 
 export const routes = [
@@ -18,6 +19,7 @@ export const routes = [
       { path: "concepts/:conceptId", element: <ConceptDetailPage /> },
       { path: "review", element: <ReviewPage /> },
       { path: "search", element: <SearchPage /> },
+      { path: "settings", element: <SettingsPage /> },
     ],
   },
 ];

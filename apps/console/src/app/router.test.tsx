@@ -1,4 +1,7 @@
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { AppShell } from "./app-shell";
 import { routes } from "./router";
 
 describe("console routes", () => {
@@ -12,6 +15,17 @@ describe("console routes", () => {
       "concepts/:conceptId",
       "review",
       "search",
+      "settings",
     ]);
+  });
+
+  it("在侧栏中提供设置入口", () => {
+    render(
+      <MemoryRouter>
+        <AppShell />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "设置" })).toHaveAttribute("href", "/settings");
   });
 });

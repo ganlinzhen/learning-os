@@ -10,6 +10,7 @@ export function AppShell() {
           <NavLink to="/library">知识库</NavLink>
           <NavLink to="/review">复习</NavLink>
           <NavLink to="/search">搜索</NavLink>
+          <NavLink to="/settings">设置</NavLink>
         </nav>
       </aside>
       <div className="content">

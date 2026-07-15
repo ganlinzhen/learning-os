@@ -1,4 +1,4 @@
-import type { ConfirmIngestionDto, CreateImportDto, IngestionDetailDto, ReviewRating } from "@learning-os/contracts";
+import type { ConfirmIngestionDto, CreateImportDto, IngestionDetailDto, LlmSettingsDto, ReviewRating, UpdateLlmSettingsDto } from "@learning-os/contracts";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3000";
 
@@ -16,6 +16,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const apiClient = {
+  getLlmSettings() {
+    return request<LlmSettingsDto>("/settings/llm");
+  },
+  saveLlmSettings(input: UpdateLlmSettingsDto) {
+    return request<LlmSettingsDto>("/settings/llm", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+  testLlmSettings(input: UpdateLlmSettingsDto) {
+    return request<LlmSettingsDto>("/settings/llm/test", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+  clearLlmApiKey() {
+    return request<LlmSettingsDto>("/settings/llm/api-key", { method: "DELETE" });
+  },
   createImport(input: CreateImportDto) {
     return request<{ sourceId: string; sessionId: string; status: string }>("/ingestions", {
       method: "POST",
