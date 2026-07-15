@@ -28,6 +28,34 @@ describe("StorageService", () => {
     });
   });
 
+  it("保留 Markdown 一级标题末尾紧邻文本的井号", async () => {
+    const service = new StorageService(
+      { appRootDir: "/tmp/learning-os" } as any,
+      { fetch: vi.fn() } as any,
+    );
+
+    await expect(
+      service.resolveImportContent({
+        type: "markdown",
+        content: "# C#\n\n内容",
+      }),
+    ).resolves.toMatchObject({ title: "C#" });
+  });
+
+  it("剔除 Markdown 一级标题前有空格的闭合井号", async () => {
+    const service = new StorageService(
+      { appRootDir: "/tmp/learning-os" } as any,
+      { fetch: vi.fn() } as any,
+    );
+
+    await expect(
+      service.resolveImportContent({
+        type: "markdown",
+        content: "# 标题 ###\n\n内容",
+      }),
+    ).resolves.toMatchObject({ title: "标题" });
+  });
+
   it("忽略 Markdown 空白显式标题并回退一级标题", async () => {
     const service = new StorageService(
       { appRootDir: "/tmp/learning-os" } as any,

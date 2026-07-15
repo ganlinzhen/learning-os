@@ -82,3 +82,25 @@ rtk git diff --check
 ```
 
 结果：均通过。
+
+## 审查修复：保留标题文本中的尾随井号
+
+### RED
+
+新增两项 Markdown 一级标题回归规格：`# C#` 应推断为 `C#`；`# 标题 ###` 仍应按合法闭合井号推断为 `标题`。修复前运行：
+
+```bash
+rtk pnpm --filter @learning-os/server test -- storage.service.spec.ts
+```
+
+结果：`# C#` 用例按预期失败，实际标题为 `C`；闭合井号用例通过。根因是一级标题正则末尾的 `#*` 会无条件剔除尾随井号。
+
+### GREEN 与验证
+
+一级标题先捕获完整文本，再仅剔除前面存在空格或 tab 的尾随井号序列，因此保留标题文本自身的井号，并兼容 Markdown 闭合井号语法。
+
+```bash
+rtk pnpm --filter @learning-os/server test -- storage.service.spec.ts
+```
+
+结果：11 个测试文件、34 项测试全部通过。

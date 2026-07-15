@@ -52,7 +52,8 @@ export class StorageService {
   }
 
   private getMarkdownTitle(content: string): string | undefined {
-    return /^\s{0,3}#(?!#)\s+(.+?)\s*#*\s*$/m.exec(content)?.[1]?.trim();
+    const title = /^\s{0,3}#(?!#)\s+(.+?)\s*$/m.exec(content)?.[1]?.trim();
+    return title?.replace(/[ \t]+#+$/, "").trim();
   }
 
   private getNonEmptyText(value: string | undefined): string | undefined {
