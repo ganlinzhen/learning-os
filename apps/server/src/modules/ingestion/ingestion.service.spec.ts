@@ -141,4 +141,17 @@ describe("IngestionService", () => {
       BadRequestException,
     );
   });
+
+  it.each([
+    ["未知导入类型", { type: "pdf", title: "资料", content: "正文" }],
+    ["数字标题", { type: "url", title: 42, url: "https://example.com" }],
+    ["URL 导入混入正文", { type: "url", url: "https://example.com", content: "不应出现" }],
+    ["Markdown 导入混入 URL", { type: "markdown", content: "# 标题", url: "https://example.com" }],
+  ])("%s 时稳定返回 400", async (_name, input) => {
+    const storage = { saveSourceContent: vi.fn() };
+    const service = new IngestionService({} as any, storage as any, {} as any);
+
+    await expect(service.createImport(input as any)).rejects.toMatchObject({ status: 400 });
+    expect(storage.saveSourceContent).not.toHaveBeenCalled();
+  });
 });

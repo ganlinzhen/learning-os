@@ -75,6 +75,7 @@ describe("confirmIngestion", () => {
 
     const result = await service.confirmIngestion("session_1", {
       selectedCandidateIds: ["cand_1"],
+      selectedCardIds: ["card_1"],
     });
 
     expect(result).toEqual({ importedConceptCount: 1 });
@@ -146,7 +147,7 @@ describe("confirmIngestion", () => {
     storage.writeNotes.mockRejectedValueOnce(new Error("disk_full"));
 
     await expect(
-      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"] }),
+      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"], selectedCardIds: ["card_1"] }),
     ).rejects.toThrow("disk_full");
 
     expect(prisma.transaction).not.toHaveBeenCalled();
@@ -158,7 +159,7 @@ describe("confirmIngestion", () => {
     prisma.transaction.mockRejectedValueOnce(new Error("sqlite_failed"));
 
     await expect(
-      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"] }),
+      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"], selectedCardIds: ["card_1"] }),
     ).rejects.toThrow("sqlite_failed");
 
     expect(storage.removeFiles).toHaveBeenCalledWith(["/tmp/notes/RSC-concept_1.md"]);
@@ -214,8 +215,8 @@ describe("confirmIngestion", () => {
     const service = new IngestionService(prisma as any, storage as any, {} as any);
 
     const results = await Promise.allSettled([
-      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"] }),
-      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"] }),
+      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"], selectedCardIds: ["card_1"] }),
+      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"], selectedCardIds: ["card_1"] }),
     ]);
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
@@ -238,7 +239,7 @@ describe("confirmIngestion", () => {
     const { service, prisma, storage } = createContext({ status });
 
     await expect(
-      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"] }),
+      service.confirmIngestion("session_1", { selectedCandidateIds: ["cand_1"], selectedCardIds: [] }),
     ).rejects.toEqual(new BadRequestException("仅可确认待审核的导入"));
 
     expect(prisma.conceptCandidate.findMany).not.toHaveBeenCalled();
@@ -250,11 +251,59 @@ describe("confirmIngestion", () => {
     const { service, prisma, storage } = createContext({ candidates: [] });
 
     await expect(
-      service.confirmIngestion("session_1", { selectedCandidateIds: ["foreign_candidate"] }),
+      service.confirmIngestion("session_1", { selectedCandidateIds: ["foreign_candidate"], selectedCardIds: [] }),
     ).rejects.toThrow("所选候选不属于当前导入");
 
     expect(prisma.conceptCandidate.findMany).toHaveBeenCalledWith({
       where: { sessionId: "session_1", id: { in: ["foreign_candidate"] } },
+      include: { cards: true },
+    });
+    expect(storage.writeNotes).not.toHaveBeenCalled();
+    expect(prisma.transaction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["缺少候选数组", { selectedCardIds: [] }],
+    ["缺少卡片数组", { selectedCandidateIds: ["cand_1"] }],
+    ["候选不是数组", { selectedCandidateIds: "cand_1", selectedCardIds: [] }],
+    ["卡片不是数组", { selectedCandidateIds: ["cand_1"], selectedCardIds: "card_1" }],
+  ])("%s 时稳定返回 400", async (_name, input) => {
+    const { service, prisma, storage } = createContext();
+
+    await expect(service.confirmIngestion("session_1", input as any)).rejects.toMatchObject({
+      status: 400,
+      message: "确认参数必须包含候选和卡片字符串数组",
+    });
+    expect(prisma.ingestionSession.findUnique).not.toHaveBeenCalled();
+    expect(storage.writeNotes).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["重复候选", { selectedCandidateIds: ["cand_1", "cand_1"], selectedCardIds: [] }],
+    ["重复卡片", { selectedCandidateIds: ["cand_1"], selectedCardIds: ["card_1", "card_1"] }],
+  ])("拒绝%s ID", async (_name, input) => {
+    const { service, prisma, storage } = createContext();
+
+    await expect(service.confirmIngestion("session_1", input)).rejects.toMatchObject({
+      status: 400,
+      message: "确认参数不允许重复 ID",
+    });
+    expect(prisma.ingestionSession.findUnique).not.toHaveBeenCalled();
+    expect(storage.writeNotes).not.toHaveBeenCalled();
+  });
+
+  it("拒绝不属于已选候选的卡片", async () => {
+    const { service, prisma, storage } = createContext();
+
+    await expect(
+      service.confirmIngestion("session_1", {
+        selectedCandidateIds: ["cand_1"],
+        selectedCardIds: ["foreign_card"],
+      }),
+    ).rejects.toMatchObject({ status: 400, message: "所选卡片不属于当前导入" });
+
+    expect(prisma.conceptCandidate.findMany).toHaveBeenCalledWith({
+      where: { sessionId: "session_1", id: { in: ["cand_1"] } },
       include: { cards: true },
     });
     expect(storage.writeNotes).not.toHaveBeenCalled();

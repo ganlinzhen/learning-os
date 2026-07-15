@@ -2,5 +2,5 @@ import type { ConfirmIngestionDto as ConfirmIngestionInput } from "@learning-os/
 
 export class ConfirmIngestionDto implements ConfirmIngestionInput {
   selectedCandidateIds!: string[];
-  selectedCardIds?: string[];
+  selectedCardIds!: string[];
 }

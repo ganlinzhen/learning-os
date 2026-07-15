@@ -59,5 +59,5 @@ export interface CreateImportDto {
 
 export interface ConfirmIngestionDto {
   selectedCandidateIds: string[];
-  selectedCardIds?: string[];
+  selectedCardIds: string[];
 }

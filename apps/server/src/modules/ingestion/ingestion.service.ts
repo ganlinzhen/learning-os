@@ -190,6 +190,7 @@ export class IngestionService {
   }
 
   async confirmIngestion(sessionId: string, input: ConfirmIngestionDto) {
+    this.validateConfirmation(input);
     const session = await this.prisma.ingestionSession.findUnique({
       where: { id: sessionId },
       include: { source: true },
@@ -201,16 +202,20 @@ export class IngestionService {
       where: { sessionId, id: { in: input.selectedCandidateIds } },
       include: { cards: true },
     });
-    if (candidates.length !== new Set(input.selectedCandidateIds).size) {
+    if (candidates.length !== input.selectedCandidateIds.length) {
       throw new BadRequestException("所选候选不属于当前导入");
+    }
+    const availableCardIds = new Set(
+      candidates.flatMap((candidate: any) => candidate.cards.map((card: any) => card.id)),
+    );
+    if (input.selectedCardIds.some((cardId) => !availableCardIds.has(cardId))) {
+      throw new BadRequestException("所选卡片不属于当前导入");
     }
 
     const imports: Array<{ conceptId: string; candidate: any; cards: any[] }> = candidates.map((candidate: any) => ({
       conceptId: randomUUID(),
       candidate,
-      cards: candidate.cards.filter((card: any) =>
-        input.selectedCardIds !== undefined ? input.selectedCardIds.includes(card.id) : card.isSelected,
-      ),
+      cards: candidate.cards.filter((card: any) => input.selectedCardIds.includes(card.id)),
     }));
     const notes = await this.storageService.writeNotes(
       imports.map(({ conceptId, candidate, cards }) => ({
@@ -285,17 +290,55 @@ export class IngestionService {
   }
 
   private validateImport(input: CreateImportDto) {
+    if (typeof input !== "object" || input === null || Array.isArray(input)) {
+      throw new BadRequestException("导入参数无效");
+    }
+    if (input.type !== "text" && input.type !== "url" && input.type !== "markdown") {
+      throw new BadRequestException("导入类型无效");
+    }
+    if (
+      (input.title !== undefined && typeof input.title !== "string") ||
+      (input.content !== undefined && typeof input.content !== "string") ||
+      (input.url !== undefined && typeof input.url !== "string")
+    ) {
+      throw new BadRequestException("导入参数必须为字符串");
+    }
+    if (input.title !== undefined && input.title.trim().length === 0) {
+      throw new BadRequestException("导入标题不能为空");
+    }
     if (input.type === "url") {
-      if (typeof input.url !== "string" || input.url.trim().length === 0) {
-        throw new BadRequestException("网页导入必须提供有效地址");
+      if (!input.url?.trim() || input.content !== undefined) {
+        throw new BadRequestException("网页导入只能提供有效地址和可选标题");
       }
       return;
     }
-    if (typeof input.content !== "string" || input.content.trim().length === 0) {
-      throw new BadRequestException(input.type === "markdown" ? "Markdown 导入必须提供非空正文" : "文本导入必须提供非空标题和正文");
+    if (!input.content?.trim() || input.url !== undefined) {
+      throw new BadRequestException(
+        input.type === "markdown" ? "Markdown 导入只能提供正文和可选标题" : "文本导入必须提供非空标题和正文",
+      );
     }
-    if (input.type === "text" && (typeof input.title !== "string" || input.title.trim().length === 0)) {
+    if (input.type === "text" && !input.title?.trim()) {
       throw new BadRequestException("文本导入必须提供非空标题和正文");
+    }
+  }
+
+  private validateConfirmation(input: ConfirmIngestionDto) {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      !Array.isArray(input.selectedCandidateIds) ||
+      !Array.isArray(input.selectedCardIds) ||
+      !input.selectedCandidateIds.every((id) => typeof id === "string" && id.trim().length > 0) ||
+      !input.selectedCardIds.every((id) => typeof id === "string" && id.trim().length > 0)
+    ) {
+      throw new BadRequestException("确认参数必须包含候选和卡片字符串数组");
+    }
+    if (
+      new Set(input.selectedCandidateIds).size !== input.selectedCandidateIds.length ||
+      new Set(input.selectedCardIds).size !== input.selectedCardIds.length
+    ) {
+      throw new BadRequestException("确认参数不允许重复 ID");
     }
   }
 

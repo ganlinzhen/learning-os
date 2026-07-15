@@ -15,6 +15,7 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
   const [data, setData] = useState<IngestionDetailDto | undefined>(initialData);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>(() => selectedIdsFrom(initialData));
   const [loadError, setLoadError] = useState("");
+  const [pollGeneration, setPollGeneration] = useState(0);
   const [retryError, setRetryError] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [confirmError, setConfirmError] = useState("");
@@ -115,8 +116,7 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
             if (!active) {
               return;
             }
-            setLoadError("状态更新失败，系统将继续尝试。");
-            scheduleNext();
+            setLoadError("状态更新失败，请点击重新加载。");
           });
       }, 1_000);
     };
@@ -128,7 +128,7 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
         clearTimeout(timer);
       }
     };
-  }, [data?.status, sessionId]);
+  }, [data?.status, pollGeneration, sessionId]);
 
   const grouped = useMemo(
     () => ({
@@ -160,6 +160,29 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
     };
   };
 
+  const reload = async () => {
+    if (!sessionId) {
+      return;
+    }
+    const action = captureActionLifecycle();
+    setLoadError("");
+    try {
+      const payload = await apiClient.getIngestionDetail(action.sessionId);
+      if (!action.isCurrent()) {
+        return;
+      }
+      setData(payload);
+      setSelectedCandidateIds(selectedIdsFrom(payload));
+      if (payload.status === "processing") {
+        setPollGeneration((current) => current + 1);
+      }
+    } catch {
+      if (action.isCurrent()) {
+        setLoadError("状态更新失败，请点击重新加载。");
+      }
+    }
+  };
+
   const confirm = async () => {
     if (!data || data.sessionId !== sessionId || confirming) {
       return;
@@ -170,7 +193,10 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
     setConfirming(true);
     setConfirmError("");
     try {
-      await apiClient.confirmIngestion(action.sessionId, { selectedCandidateIds });
+      const selectedCardIds = [...data.coreConcepts, ...data.candidateConcepts]
+        .filter((candidate) => selectedCandidateIds.includes(candidate.id))
+        .flatMap((candidate) => candidate.cards.filter((card) => card.isSelected).map((card) => card.id));
+      await apiClient.confirmIngestion(action.sessionId, { selectedCandidateIds, selectedCardIds });
       if (action.isCurrent()) {
         navigate("/library");
       }
@@ -237,7 +263,12 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
         <section className="card stack" aria-live="polite" role="status">
           <h2>{pending ? "等待整理" : "正在整理"}</h2>
           <p>{pending ? "导入已创建，正在等待整理任务开始…" : "正在整理导入内容，请稍候…"}</p>
-          {loadError ? <p role="alert">{loadError}</p> : null}
+          {loadError ? (
+            <>
+              <p role="alert">{loadError}</p>
+              <button onClick={() => void reload()} type="button">重新加载</button>
+            </>
+          ) : null}
         </section>
       </main>
     );

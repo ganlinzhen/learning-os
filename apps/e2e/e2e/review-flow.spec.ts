@@ -48,6 +48,9 @@ test.beforeEach(async ({ request }) => {
   await request.post(`http://127.0.0.1:3001/ingestions/${session.sessionId}/confirm`, {
     data: {
       selectedCandidateIds: payload.coreConcepts.map((item: { id: string }) => item.id),
+      selectedCardIds: payload.coreConcepts.flatMap((item: { cards: Array<{ id: string; isSelected: boolean }> }) =>
+        item.cards.filter((card) => card.isSelected).map((card) => card.id),
+      ),
     },
   });
 });

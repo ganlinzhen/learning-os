@@ -94,6 +94,38 @@ describe("IngestionReviewPage", () => {
     expect(apiClient.getIngestionDetail).toHaveBeenCalledTimes(1);
   });
 
+  it("轮询失败后停止请求，点击重新加载才恢复", async () => {
+    vi.useFakeTimers();
+    vi.mocked(apiClient.getIngestionDetail)
+      .mockRejectedValueOnce(new Error("network_failed"))
+      .mockResolvedValueOnce(createDetail());
+    renderPage(
+      createDetail({
+        status: "processing",
+        coreConcepts: [],
+        task: { id: "task_1", status: "running", attemptCount: 1, canRetry: false },
+      }),
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("状态更新失败，请点击重新加载。");
+    expect(apiClient.getIngestionDetail).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(apiClient.getIngestionDetail).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(apiClient.getIngestionDetail).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("核心知识点")).toBeInTheDocument();
+  });
+
   it("pending 任务显示等待开始文案", () => {
     renderPage(
       createDetail({
@@ -307,6 +339,10 @@ describe("IngestionReviewPage", () => {
 
     await act(async () => {
       await Promise.resolve();
+    });
+    expect(apiClient.confirmIngestion).toHaveBeenCalledWith("session_1", {
+      selectedCandidateIds: ["1"],
+      selectedCardIds: [],
     });
     expect(navigateMock).toHaveBeenCalledOnce();
     expect(navigateMock).toHaveBeenCalledWith("/library");
