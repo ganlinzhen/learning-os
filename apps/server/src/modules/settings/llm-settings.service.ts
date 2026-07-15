@@ -19,6 +19,7 @@ type LlmSettingsFileSystem = typeof DEFAULT_FILE_SYSTEM;
 @Injectable()
 export class LlmSettingsService {
   private readonly fileSystem: LlmSettingsFileSystem;
+  private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(
     @Inject(AppConfigService) private readonly config: AppConfigService,
@@ -28,31 +29,54 @@ export class LlmSettingsService {
   }
 
   async get(): Promise<LlmSettingsDto> {
-    return this.toDto(await this.readSettings());
+    return this.runExclusively(async () => this.toDto(await this.readSettings()));
   }
 
-  async save(input: UpdateLlmSettingsDto): Promise<LlmSettingsDto> {
-    const current = await this.readSettings();
-    const apiKey = this.validateApiKey(input.apiKey) ?? current.apiKey;
-    const settings: StoredLlmSettings = {
-      ...(apiKey ? { apiKey } : {}),
-      baseUrl: this.validateBaseUrl(input.baseUrl),
-      model: this.validateModel(input.model),
-    };
+  async save(
+    input: UpdateLlmSettingsDto,
+    afterSave?: (settings: LlmSettingsDto) => Promise<void>,
+  ): Promise<LlmSettingsDto> {
+    return this.runExclusively(async () => {
+      const current = await this.readSettings();
+      const apiKey = this.validateApiKey(input.apiKey) ?? current.apiKey;
+      const settings: StoredLlmSettings = {
+        ...(apiKey ? { apiKey } : {}),
+        baseUrl: this.validateBaseUrl(input.baseUrl),
+        model: this.validateModel(input.model),
+      };
 
-    await this.writeSettings(settings);
-    return this.toDto(settings);
+      await this.writeSettings(settings);
+      const dto = this.toDto(settings);
+      await afterSave?.(dto);
+      return dto;
+    });
   }
 
   async clearApiKey(): Promise<LlmSettingsDto> {
-    const current = await this.readSettings();
-    const settings: StoredLlmSettings = {
-      baseUrl: this.getValidBaseUrl(current.baseUrl),
-      model: this.getValidModel(current.model),
-    };
+    return this.runExclusively(async () => {
+      const current = await this.readSettings();
+      const settings: StoredLlmSettings = {
+        baseUrl: this.getValidBaseUrl(current.baseUrl),
+        model: this.getValidModel(current.model),
+      };
 
-    await this.writeSettings(settings);
-    return this.toDto(settings);
+      await this.writeSettings(settings);
+      return this.toDto(settings);
+    });
+  }
+
+  private async runExclusively<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.mutationQueue;
+    let release!: () => void;
+    this.mutationQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous.catch(() => undefined);
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
   }
 
   private async readSettings(): Promise<StoredLlmSettings> {

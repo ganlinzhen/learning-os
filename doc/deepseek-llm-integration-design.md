@@ -41,9 +41,9 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 
 ## 模块边界
 
-- `settings.py`：加载并校验无密钥泄露的运行配置。
-- `deepseek_client.py`：仅负责 HTTP 请求和外部错误归一化，可通过注入的 `httpx` transport 测试。
-- `generation.py`：负责 Prompt、响应解析和 Pydantic 验证；不包含网络细节。
+- `apps/server/src/modules/settings/llm-settings.service.ts`：加载、保存并脱敏返回本地运行配置。
+- `apps/generator/src/learning_os_generator/infrastructure/deepseek.py`：负责 HTTP 请求、Prompt、响应解析与外部错误归一化，可通过注入的 `httpx` transport 测试。
+- `apps/generator/src/learning_os_generator/schemas/generation.py`：负责请求与响应的 Pydantic 契约。
 - `api/app.py`：将领域异常转成稳定的 HTTP 状态和错误体。
 
 ## 错误与可观测性

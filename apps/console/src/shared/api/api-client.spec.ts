@@ -51,4 +51,17 @@ describe("apiClient", () => {
       method: "DELETE",
     });
   });
+
+  it("通过桌面预加载桥接为设置写入附加令牌", async () => {
+    window.learningOsDesktop = { getApiToken: vi.fn().mockResolvedValue("desktop-token") };
+
+    await apiClient.saveLlmSettings({ baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" });
+
+    expect(fetch).toHaveBeenCalledWith("http://127.0.0.1:3000/settings/llm", {
+      headers: { "content-type": "application/json", "x-learning-os-token": "desktop-token" },
+      method: "PUT",
+      body: JSON.stringify({ baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" }),
+    });
+    delete window.learningOsDesktop;
+  });
 });

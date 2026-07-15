@@ -13,7 +13,7 @@
 
 - `apps/console`: React + Vite 用户操作台
 - `apps/server`: NestJS 本地服务
-- `apps/generator`: FastAPI 规则版候选生成服务
+- `apps/generator`: FastAPI DeepSeek 候选生成服务
 - `apps/shell`: 桌面壳入口与本地进程编排
 - `packages/contracts`: Console 与 Server 共享契约定义
 

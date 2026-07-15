@@ -1,6 +1,8 @@
-import { BadGatewayException, BadRequestException, Body, Controller, Delete, Get, Inject, Post, Put } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Headers, Inject, Post, Put } from "@nestjs/common";
+import { timingSafeEqual } from "node:crypto";
 import { UpdateLlmSettingsDto } from "@learning-os/contracts";
-import { AgentClientService } from "../../infrastructure/agent/agent-client.service";
+import { AgentClientService, AgentLlmConnectionError } from "../../infrastructure/agent/agent-client.service";
+import { AppConfigService } from "../../infrastructure/config/app-config.service";
 import { LlmSettingsService } from "./llm-settings.service";
 
 @Controller("settings")
@@ -8,6 +10,7 @@ export class SettingsController {
   constructor(
     @Inject(LlmSettingsService) private readonly service: LlmSettingsService,
     @Inject(AgentClientService) private readonly agentClient: AgentClientService,
+    @Inject(AppConfigService) private readonly config: AppConfigService,
   ) {}
 
   @Get("llm")
@@ -16,28 +19,51 @@ export class SettingsController {
   }
 
   @Put("llm")
-  updateLlmSettings(@Body() input: UpdateLlmSettingsDto) {
+  updateLlmSettings(@Body() input: UpdateLlmSettingsDto, @Headers("x-learning-os-token") token?: string) {
+    this.validateWriteToken(token);
     this.validateLlmSettingsInput(input);
     return this.service.save(input);
   }
 
   @Post("llm/test")
-  async testLlmSettings(@Body() input: UpdateLlmSettingsDto) {
+  async testLlmSettings(@Body() input: UpdateLlmSettingsDto, @Headers("x-learning-os-token") token?: string) {
+    this.validateWriteToken(token);
     this.validateLlmSettingsInput(input);
-    const settings = await this.service.save(input);
-
+    let savedSettings: Awaited<ReturnType<LlmSettingsService["save"]>> | undefined;
     try {
-      await this.agentClient.testLlmConnection();
-    } catch {
-      throw new BadGatewayException("LLM 连接测试失败，请检查配置后重试");
+      return await this.service.save(input, async (settings) => {
+        savedSettings = settings;
+        await this.agentClient.testLlmConnection();
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      const code = error instanceof AgentLlmConnectionError ? error.code : "agent_request_failed";
+      throw new BadGatewayException({
+        code,
+        message: "LLM 连接测试失败，请检查配置后重试",
+        ...(savedSettings ? { settings: savedSettings } : {}),
+      });
     }
-
-    return settings;
   }
 
   @Delete("llm/api-key")
-  clearLlmApiKey() {
+  clearLlmApiKey(@Headers("x-learning-os-token") token?: string) {
+    this.validateWriteToken(token);
     return this.service.clearApiKey();
+  }
+
+  private validateWriteToken(token: string | undefined): void {
+    const expected = this.config.apiToken;
+    if (!expected || !token) {
+      throw new ForbiddenException("设置写入未获授权");
+    }
+    const expectedBuffer = Buffer.from(expected);
+    const tokenBuffer = Buffer.from(token);
+    if (expectedBuffer.length !== tokenBuffer.length || !timingSafeEqual(expectedBuffer, tokenBuffer)) {
+      throw new ForbiddenException("设置写入未获授权");
+    }
   }
 
   private validateLlmSettingsInput(input: unknown): asserts input is UpdateLlmSettingsDto {

@@ -87,6 +87,42 @@ describe("LlmSettingsService", () => {
     });
   });
 
+  it("串行执行保存后的连接测试，避免测试到另一份配置", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), "learning-os-llm-settings-")), "llm.json");
+    const service = new LlmSettingsService({ llmConfigPath: path } as any);
+    let releaseFirstTest!: () => void;
+    const firstTest = new Promise<void>((resolve) => {
+      releaseFirstTest = resolve;
+    });
+    let signalFirstTestStarted!: () => void;
+    const firstTestStarted = new Promise<void>((resolve) => {
+      signalFirstTestStarted = resolve;
+    });
+    const testedModels: string[] = [];
+
+    const firstSave = service.save(
+      { apiKey: "secret", baseUrl: "https://api.deepseek.com", model: "first-model" },
+      async () => {
+        testedModels.push(JSON.parse(await readFile(path, "utf8")).model);
+        signalFirstTestStarted();
+        await firstTest;
+      },
+    );
+    const secondSave = service.save(
+      { baseUrl: "https://api.deepseek.com", model: "second-model" },
+      async () => {
+        testedModels.push(JSON.parse(await readFile(path, "utf8")).model);
+      },
+    );
+
+    await firstTestStarted;
+    expect(testedModels).toEqual(["first-model"]);
+    releaseFirstTest();
+    await Promise.all([firstSave, secondSave]);
+
+    expect(testedModels).toEqual(["first-model", "second-model"]);
+  });
+
   it("读取已保存的真实密钥时 DTO 不包含 apiKey", async () => {
     const path = join(mkdtempSync(join(tmpdir(), "learning-os-llm-settings-")), "llm.json");
     const service = new LlmSettingsService({ llmConfigPath: path } as any);

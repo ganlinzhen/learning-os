@@ -6,6 +6,13 @@ type AgentClientOptions = {
   baseUrl?: string;
 };
 
+export class AgentLlmConnectionError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = "AgentLlmConnectionError";
+  }
+}
+
 @Injectable()
 export class AgentClientService {
   private readonly fetchImpl: typeof fetch;
@@ -40,7 +47,16 @@ export class AgentClientService {
     const response = await this.fetchImpl(`${this.getBaseUrl()}/test-connection`, { method: "POST" });
 
     if (!response.ok) {
-      throw new Error("agent_request_failed");
+      throw new AgentLlmConnectionError(await this.getErrorCode(response));
+    }
+  }
+
+  private async getErrorCode(response: Pick<Response, "json">): Promise<string> {
+    try {
+      const body = await response.json() as { detail?: unknown };
+      return typeof body.detail === "string" ? body.detail : "agent_request_failed";
+    } catch {
+      return "agent_request_failed";
     }
   }
 

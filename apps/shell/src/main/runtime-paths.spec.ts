@@ -9,6 +9,7 @@ describe("resolveRuntimePaths", () => {
       isPackaged: false,
       appPath: "/tmp/Learning OS.app",
       userDataPath: "/tmp/user-data",
+      apiToken: "runtime-token",
     });
 
     expect(paths.webUrl).toBe("http://127.0.0.1:5173");
@@ -17,6 +18,7 @@ describe("resolveRuntimePaths", () => {
     expect(paths.serverCommand.env.LEARNING_OS_LLM_CONFIG_PATH).toBe(
       "/tmp/user-data/runtime/settings/llm.json",
     );
+    expect(paths.serverCommand.env.LEARNING_OS_API_TOKEN).toBe("runtime-token");
     expect(paths.generatorCommand.env.LEARNING_OS_LLM_CONFIG_PATH).toBe(
       paths.serverCommand.env.LEARNING_OS_LLM_CONFIG_PATH,
     );
@@ -30,7 +32,7 @@ describe("resolveRuntimePaths", () => {
     const turboJson = JSON.parse(readFileSync(join(process.cwd(), "../..", "turbo.json"), "utf8")) as {
       tasks: Record<string, { passThroughEnv?: string[] }>;
     };
-    const envPrefix = 'LEARNING_OS_LLM_CONFIG_PATH="${PWD}/.learning-os/settings/llm.json"';
+    const envPrefix = 'LEARNING_OS_LLM_CONFIG_PATH="${PWD}/.learning-os/settings/llm.json" LEARNING_OS_API_TOKEN=learning-os-development VITE_LEARNING_OS_API_TOKEN=learning-os-development';
 
     expect(packageJson.scripts["dev:web"]).toBe(
       `${envPrefix} turbo run dev:console dev:server dev:generator`,
@@ -39,18 +41,18 @@ describe("resolveRuntimePaths", () => {
       `${envPrefix} turbo run dev:console dev:server dev:generator dev:shell`,
     );
     expect(packageJson.scripts["dev:server"]).toBe(
-      `${envPrefix} turbo run dev:server --filter=@learning-os/server`,
+      'LEARNING_OS_LLM_CONFIG_PATH="${PWD}/.learning-os/settings/llm.json" LEARNING_OS_API_TOKEN=learning-os-development turbo run dev:server --filter=@learning-os/server',
     );
     expect(packageJson.scripts["dev:generator"]).toBe(
-      `${envPrefix}; export LEARNING_OS_LLM_CONFIG_PATH; cd apps/generator && ../../.venv/bin/python -m uvicorn learning_os_generator.api.app:app --app-dir src --host 127.0.0.1 --port 8000`,
+      'LEARNING_OS_LLM_CONFIG_PATH="${PWD}/.learning-os/settings/llm.json"; export LEARNING_OS_LLM_CONFIG_PATH; cd apps/generator && ../../.venv/bin/python -m uvicorn learning_os_generator.api.app:app --app-dir src --host 127.0.0.1 --port 8000',
     );
-    expect(turboJson.tasks["dev:server"].passThroughEnv).toEqual(["LEARNING_OS_LLM_CONFIG_PATH"]);
+    expect(turboJson.tasks["dev:server"].passThroughEnv).toEqual(["LEARNING_OS_LLM_CONFIG_PATH", "LEARNING_OS_API_TOKEN"]);
     expect(turboJson.tasks["//#dev:generator"].passThroughEnv).toEqual([
       "LEARNING_OS_LLM_CONFIG_PATH",
     ]);
     expect(
       Object.values(turboJson.tasks).flatMap((task) => task.passThroughEnv ?? []),
-    ).toEqual(["LEARNING_OS_LLM_CONFIG_PATH", "LEARNING_OS_LLM_CONFIG_PATH"]);
+    ).toEqual(["VITE_LEARNING_OS_API_TOKEN", "LEARNING_OS_LLM_CONFIG_PATH", "LEARNING_OS_API_TOKEN", "LEARNING_OS_LLM_CONFIG_PATH"]);
   });
 
   it("在生产态返回打包后的资源路径", () => {
@@ -58,6 +60,7 @@ describe("resolveRuntimePaths", () => {
       isPackaged: true,
       appPath: "/Applications/Learning OS.app/Contents/Resources/app.asar",
       userDataPath: "/Users/demo/Library/Application Support/Learning OS",
+      apiToken: "runtime-token",
     });
 
     expect(paths.webUrl.startsWith("file://")).toBe(true);
@@ -70,6 +73,7 @@ describe("resolveRuntimePaths", () => {
     expect(paths.serverCommand.env.LEARNING_OS_LLM_CONFIG_PATH).toBe(
       "/Users/demo/Library/Application Support/Learning OS/runtime/settings/llm.json",
     );
+    expect(paths.serverCommand.env.LEARNING_OS_API_TOKEN).toBe("runtime-token");
     expect(paths.generatorCommand.env.LEARNING_OS_LLM_CONFIG_PATH).toBe(
       paths.serverCommand.env.LEARNING_OS_LLM_CONFIG_PATH,
     );

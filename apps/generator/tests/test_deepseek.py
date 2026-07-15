@@ -247,6 +247,20 @@ def test_test_connection_normalizes_upstream_http_errors(status_code):
         generator.test_connection()
 
 
+@pytest.mark.parametrize(
+    ("status_code", "expected_code"),
+    [(401, "deepseek_auth_failed"), (404, "deepseek_model_or_request_failed")],
+)
+def test_test_connection_classifies_upstream_http_errors(status_code, expected_code):
+    generator = DeepSeekGenerator(
+        api_key="key",
+        client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(status_code))),
+    )
+
+    with pytest.raises(DeepSeekGenerationError, match=expected_code):
+        generator.test_connection()
+
+
 def test_test_connection_normalizes_timeout_errors():
     class TimeoutClient:
         def post(self, *_args, **_kwargs):

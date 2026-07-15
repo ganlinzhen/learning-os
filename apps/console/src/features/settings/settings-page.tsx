@@ -19,6 +19,27 @@ function isHttpUrl(value: string) {
   }
 }
 
+function getConnectionErrorMessage(code: string): string {
+  switch (code) {
+    case "deepseek_auth_failed":
+      return "API Key 无效或没有访问权限。";
+    case "deepseek_model_or_request_failed":
+      return "模型名称或服务地址不可用，请检查配置。";
+    case "deepseek_network_failed":
+      return "无法连接到服务，请检查地址和网络。";
+    case "deepseek_response_invalid":
+      return "服务返回了无法识别的响应，请检查服务兼容性。";
+    case "deepseek_not_configured":
+      return "尚未配置 API Key，请填写后重试。";
+    default:
+      return "连接测试失败，请检查 API Key、地址和模型名称后重试。";
+  }
+}
+
+function isApiRequestError(error: unknown): error is { code: string; settings?: LlmSettingsDto } {
+  return Boolean(error && typeof error === "object" && "code" in error && typeof error.code === "string");
+}
+
 export function SettingsPage() {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
@@ -116,9 +137,14 @@ export function SettingsPage() {
         action === "test" ? await apiClient.testLlmSettings(payload) : await apiClient.saveLlmSettings(payload);
       applySettings(settings);
       setMessage(action === "test" ? "连接测试成功。" : "配置已保存。");
-    } catch {
+    } catch (error) {
+      if (action === "test" && isApiRequestError(error) && error.settings) {
+        applySettings(error.settings);
+      }
       setErrorMessage(
-        action === "test" ? "连接测试失败，请检查 API Key、地址和模型名称后重试。" : "保存失败，请检查配置后重试。",
+        action === "test"
+          ? getConnectionErrorMessage(isApiRequestError(error) ? error.code : "")
+          : "保存失败，请检查配置后重试。",
       );
     } finally {
       setPending(false);
@@ -181,6 +207,7 @@ export function SettingsPage() {
                 </div>
                 <input
                   aria-describedby={fieldErrors.apiKey ? "api-key-error" : undefined}
+                  aria-invalid={Boolean(fieldErrors.apiKey)}
                   autoComplete="off"
                   id="api-key"
                   onChange={(event) => setApiKey(event.target.value)}
@@ -200,6 +227,7 @@ export function SettingsPage() {
               <div className="settings-row-control">
                 <input
                   aria-describedby={fieldErrors.baseUrl ? "base-url-error" : undefined}
+                  aria-invalid={Boolean(fieldErrors.baseUrl)}
                   id="base-url"
                   onChange={(event) => setBaseUrl(event.target.value)}
                   type="url"
@@ -217,6 +245,7 @@ export function SettingsPage() {
               <div className="settings-row-control">
                 <input
                   aria-describedby={fieldErrors.model ? "model-error" : undefined}
+                  aria-invalid={Boolean(fieldErrors.model)}
                   id="model"
                   onChange={(event) => setModel(event.target.value)}
                   type="text"

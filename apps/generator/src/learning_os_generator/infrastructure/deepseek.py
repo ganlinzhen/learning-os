@@ -16,6 +16,10 @@ class DeepSeekNotConfiguredError(Exception):
 class DeepSeekGenerationError(Exception):
     """DeepSeek 调用或响应校验失败。"""
 
+    def __init__(self, code: str = "deepseek_model_or_request_failed") -> None:
+        super().__init__(code)
+        self.code = code
+
 
 class DeepSeekGenerator:
     def __init__(
@@ -90,8 +94,12 @@ class DeepSeekGenerator:
             if not isinstance(content, str) or not content.strip():
                 raise ValueError("empty_content")
             return GenerateResponse.model_validate(json.loads(content))
-        except (httpx.HTTPError, KeyError, IndexError, RuntimeError, TypeError, ValueError, ValidationError) as error:
-            raise DeepSeekGenerationError() from error
+        except httpx.HTTPStatusError as error:
+            raise DeepSeekGenerationError(self._classify_http_error(error)) from error
+        except httpx.RequestError as error:
+            raise DeepSeekGenerationError("deepseek_network_failed") from error
+        except (KeyError, IndexError, RuntimeError, TypeError, ValueError, ValidationError) as error:
+            raise DeepSeekGenerationError("deepseek_response_invalid") from error
 
     def test_connection(self) -> None:
         if not self.api_key:
@@ -113,8 +121,18 @@ class DeepSeekGenerator:
             content = response.json()["choices"][0]["message"]["content"]
             if not isinstance(content, str) or not content.strip():
                 raise ValueError("empty_content")
-        except (httpx.HTTPError, AttributeError, KeyError, IndexError, RuntimeError, TypeError, ValueError) as error:
-            raise DeepSeekGenerationError() from error
+        except httpx.HTTPStatusError as error:
+            raise DeepSeekGenerationError(self._classify_http_error(error)) from error
+        except httpx.RequestError as error:
+            raise DeepSeekGenerationError("deepseek_network_failed") from error
+        except (AttributeError, KeyError, IndexError, RuntimeError, TypeError, ValueError) as error:
+            raise DeepSeekGenerationError("deepseek_response_invalid") from error
+
+    @staticmethod
+    def _classify_http_error(error: httpx.HTTPStatusError) -> str:
+        if error.response.status_code in (401, 403):
+            return "deepseek_auth_failed"
+        return "deepseek_model_or_request_failed"
 
     @staticmethod
     def _build_messages(request: GenerateRequest) -> list[dict[str, str]]:

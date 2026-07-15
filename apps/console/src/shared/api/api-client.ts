@@ -2,17 +2,68 @@ import type { ConfirmIngestionDto, CreateImportDto, IngestionDetailDto, LlmSetti
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:3000";
 
+declare global {
+  interface Window {
+    learningOsDesktop?: {
+      getApiToken: () => Promise<string>;
+    };
+  }
+}
+
+export class ApiRequestError extends Error {
+  constructor(
+    readonly code: string,
+    readonly settings?: LlmSettingsDto,
+  ) {
+    super(code);
+    this.name = "ApiRequestError";
+  }
+}
+
+async function getApiToken(): Promise<string | undefined> {
+  if (window.learningOsDesktop) {
+    return window.learningOsDesktop.getApiToken();
+  }
+  return import.meta.env.VITE_LEARNING_OS_API_TOKEN;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = await getApiToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...(token && init?.method && init.method !== "GET" ? { "x-learning-os-token": token } : {}),
+    },
     ...init,
   });
 
   if (!response.ok) {
-    throw new Error(`request_failed:${path}`);
+    try {
+      const body = await response.json() as { code?: unknown; settings?: unknown };
+      throw new ApiRequestError(
+        typeof body.code === "string" ? body.code : `request_failed:${path}`,
+        isLlmSettingsDto(body.settings) ? body.settings : undefined,
+      );
+    } catch (error) {
+      if (error instanceof ApiRequestError) {
+        throw error;
+      }
+      throw new ApiRequestError(`request_failed:${path}`);
+    }
   }
 
   return response.json() as Promise<T>;
+}
+
+function isLlmSettingsDto(value: unknown): value is LlmSettingsDto {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && "apiKeyConfigured" in value
+    && typeof (value as LlmSettingsDto).apiKeyConfigured === "boolean"
+    && typeof (value as LlmSettingsDto).baseUrl === "string"
+    && typeof (value as LlmSettingsDto).model === "string",
+  );
 }
 
 export const apiClient = {

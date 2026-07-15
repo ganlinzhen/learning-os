@@ -108,13 +108,20 @@ describe("SettingsPage", () => {
   });
 
   it("测试失败时展示可操作的错误提示", async () => {
-    vi.mocked(apiClient.testLlmSettings).mockRejectedValueOnce(new Error("request_failed:/settings/llm/test"));
+    const failure = Object.assign(new Error("request_failed:/settings/llm/test"), {
+      code: "deepseek_auth_failed",
+      settings: { ...configuredSettings, apiKeyConfigured: true },
+    });
+    vi.mocked(apiClient.getLlmSettings).mockResolvedValueOnce({ ...configuredSettings, apiKeyConfigured: false });
+    vi.mocked(apiClient.testLlmSettings).mockRejectedValueOnce(failure);
     render(<SettingsPage />);
 
     await screen.findByRole("button", { name: "保存并测试连接" });
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "new-key" } });
     fireEvent.click(screen.getByRole("button", { name: "保存并测试连接" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("连接测试失败，请检查 API Key、地址和模型名称后重试。");
+    expect(await screen.findByRole("alert")).toHaveTextContent("API Key 无效或没有访问权限。");
+    expect(screen.getByText("已配置")).toBeInTheDocument();
   });
 
   it("拒绝非 HTTP(S) 的 Base URL", async () => {
@@ -125,6 +132,7 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存配置" }));
 
     expect(await screen.findByText("请输入有效的 HTTP(S) 地址。")).toBeInTheDocument();
+    expect(screen.getByLabelText("Base URL")).toHaveAttribute("aria-invalid", "true");
     expect(apiClient.saveLlmSettings).not.toHaveBeenCalled();
   });
 

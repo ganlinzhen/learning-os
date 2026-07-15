@@ -26,7 +26,7 @@ def generate(
     except DeepSeekNotConfiguredError as error:
         raise HTTPException(status_code=503, detail="deepseek_not_configured") from error
     except DeepSeekGenerationError as error:
-        raise HTTPException(status_code=502, detail="deepseek_generation_failed") from error
+        raise HTTPException(status_code=502, detail=error.code) from error
 
 
 @app.post("/test-connection")
@@ -39,4 +39,4 @@ def test_connection(
     except DeepSeekNotConfiguredError as error:
         raise HTTPException(status_code=503, detail="deepseek_not_configured") from error
     except DeepSeekGenerationError as error:
-        raise HTTPException(status_code=502, detail="deepseek_generation_failed") from error
+        raise HTTPException(status_code=502, detail=error.code) from error

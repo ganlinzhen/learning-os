@@ -76,7 +76,7 @@ def test_generate_returns_502_when_deepseek_generation_fails():
     response = TestClient(app).post("/generate", json={"title": "RSC", "content": "内容"})
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "deepseek_generation_failed"}
+    assert response.json() == {"detail": "deepseek_model_or_request_failed"}
 
 
 def test_test_connection_returns_ok():
@@ -113,7 +113,7 @@ def test_test_connection_returns_502_when_upstream_fails():
     response = TestClient(app).post("/test-connection")
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "deepseek_generation_failed"}
+    assert response.json() == {"detail": "deepseek_model_or_request_failed"}
 
 
 def test_test_connection_returns_502_when_chat_completion_response_is_invalid():
@@ -129,4 +129,4 @@ def test_test_connection_returns_502_when_chat_completion_response_is_invalid():
     response = TestClient(app).post("/test-connection")
 
     assert response.status_code == 502
-    assert response.json() == {"detail": "deepseek_generation_failed"}
+    assert response.json() == {"detail": "deepseek_response_invalid"}

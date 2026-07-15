@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException } from "@nestjs/common";
+import { BadGatewayException, BadRequestException, ForbiddenException } from "@nestjs/common";
 import { describe, expect, it, vi } from "vitest";
 import { SettingsController } from "./settings.controller";
 
@@ -17,11 +17,15 @@ const validInput = {
 function createController() {
   const service = {
     get: vi.fn().mockResolvedValue(maskedSettings),
-    save: vi.fn().mockResolvedValue(maskedSettings),
+    save: vi.fn(async (_input, afterSave) => {
+      await afterSave?.(maskedSettings);
+      return maskedSettings;
+    }),
     clearApiKey: vi.fn().mockResolvedValue({ ...maskedSettings, apiKeyConfigured: false }),
   };
   const agent = { testLlmConnection: vi.fn().mockResolvedValue(undefined) };
-  return { controller: new SettingsController(service as any, agent as any), service, agent };
+  const config = { apiToken: "test-token" };
+  return { controller: new SettingsController(service as any, agent as any, config as any), service, agent };
 }
 
 describe("SettingsController", () => {
@@ -30,9 +34,9 @@ describe("SettingsController", () => {
 
     const responses = await Promise.all([
       controller.getLlmSettings(),
-      controller.updateLlmSettings(validInput),
-      controller.testLlmSettings(validInput),
-      controller.clearLlmApiKey(),
+      controller.updateLlmSettings(validInput, "test-token"),
+      controller.testLlmSettings(validInput, "test-token"),
+      controller.clearLlmApiKey("test-token"),
     ]);
 
     expect(responses).toEqual([maskedSettings, maskedSettings, maskedSettings, { ...maskedSettings, apiKeyConfigured: false }]);
@@ -48,9 +52,9 @@ describe("SettingsController", () => {
   it("连接测试会先保存设置，再调用 Generator", async () => {
     const { controller, service, agent } = createController();
 
-    await expect(controller.testLlmSettings(validInput)).resolves.toEqual(maskedSettings);
+    await expect(controller.testLlmSettings(validInput, "test-token")).resolves.toEqual(maskedSettings);
 
-    expect(service.save).toHaveBeenCalledWith(validInput);
+    expect(service.save).toHaveBeenCalledWith(validInput, expect.any(Function));
     expect(agent.testLlmConnection).toHaveBeenCalledOnce();
     expect(service.save.mock.invocationCallOrder[0]).toBeLessThan(agent.testLlmConnection.mock.invocationCallOrder[0]);
   });
@@ -59,7 +63,7 @@ describe("SettingsController", () => {
     const { controller, service, agent } = createController();
     service.save.mockRejectedValueOnce(new BadRequestException("模型不能为空"));
 
-    await expect(controller.testLlmSettings({ ...validInput, model: "" })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.testLlmSettings({ ...validInput, model: "" }, "test-token")).rejects.toBeInstanceOf(BadRequestException);
     expect(agent.testLlmConnection).not.toHaveBeenCalled();
   });
 
@@ -67,8 +71,8 @@ describe("SettingsController", () => {
     const { controller, service, agent } = createController();
     const expectedError = new BadRequestException("LLM 设置请求体必须是非空对象");
 
-    expect(() => controller.updateLlmSettings(input as any)).toThrow(expectedError);
-    await expect(controller.testLlmSettings(input as any)).rejects.toEqual(expectedError);
+    expect(() => controller.updateLlmSettings(input as any, "test-token")).toThrow(expectedError);
+    await expect(controller.testLlmSettings(input as any, "test-token")).rejects.toEqual(expectedError);
 
     expect(service.save).not.toHaveBeenCalled();
     expect(agent.testLlmConnection).not.toHaveBeenCalled();
@@ -78,8 +82,15 @@ describe("SettingsController", () => {
     const { controller, agent } = createController();
     agent.testLlmConnection.mockRejectedValueOnce(new Error("agent_request_failed"));
 
-    await expect(controller.testLlmSettings(validInput)).rejects.toEqual(
-      new BadGatewayException("LLM 连接测试失败，请检查配置后重试"),
-    );
+    await expect(controller.testLlmSettings(validInput, "test-token")).rejects.toMatchObject({
+      response: expect.objectContaining({ code: "agent_request_failed", settings: maskedSettings }),
+    });
+  });
+
+  it("拒绝没有受控令牌的设置写入", () => {
+    const { controller, service } = createController();
+
+    expect(() => controller.updateLlmSettings(validInput, "attacker-token")).toThrow(ForbiddenException);
+    expect(service.save).not.toHaveBeenCalled();
   });
 });

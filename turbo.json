@@ -28,13 +28,17 @@
     },
     "dev:console": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": [
+        "VITE_LEARNING_OS_API_TOKEN"
+      ]
     },
     "dev:server": {
       "cache": false,
       "persistent": true,
       "passThroughEnv": [
-        "LEARNING_OS_LLM_CONFIG_PATH"
+        "LEARNING_OS_LLM_CONFIG_PATH",
+        "LEARNING_OS_API_TOKEN"
       ]
     },
     "dev:shell": {
