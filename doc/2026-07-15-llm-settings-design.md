@@ -14,13 +14,13 @@
 
 ## 配置与安全
 
-本地服务在应用根目录的 `settings/llm.json` 原子写入配置，并将文件权限限制为当前用户可读写。API Key 以明文保存在此私有本地文件中，理由是当前应用没有跨平台密钥链抽象；接口绝不返回密钥本身，只返回 `apiKeyConfigured` 状态。
+本地服务在应用运行数据根目录的 `settings/llm.json` 原子写入配置，并将文件权限限制为当前用户可读写。桌面打包版使用用户的应用数据目录，根开发命令使用仓库的 `.learning-os/settings/llm.json`；两者都不写入仓库的受跟踪文件、安装包资源目录或 `apps/generator/.env`。API Key 以明文保存在此私有本地文件中，理由是当前应用没有跨平台密钥链抽象；接口绝不返回密钥本身，只返回 `apiKeyConfigured` 状态。
 
 读取接口返回 Base URL、模型名称与密钥是否已配置。保存接口中 API Key 字段是可选的：省略或留空表示保留旧密钥；显式清除动作会删除密钥。Base URL 必须为 HTTP(S) 地址，模型名称必须为非空字符串。
 
 ## 数据流
 
-Shell 在桌面版启动 Server 与 Generator 时，把同一个 `LEARNING_OS_LLM_CONFIG_PATH` 传给两个进程；开发脚本也使用该路径。Server 用它实现设置 API，Generator 在每次生成前从该路径读取最新配置，因此设置保存后不需要重启即可对下一次导入生效。Generator 在没有该环境变量时保留既有 `.env` 回退，保障现有独立开发与测试路径。
+Shell 在桌面版启动 Server 与 Generator 时，把同一个 `LEARNING_OS_LLM_CONFIG_PATH` 传给两个进程；根开发脚本也使用该路径。Server 用它实现设置 API，Generator 在每次生成前从该路径读取最新配置，因此设置保存后不需要重启即可对下一次导入生效。只有在独立运行 Generator 且没有该环境变量时，才保留既有 `.env` 回退，保障独立开发与测试路径；应用和根开发命令的推荐配置入口始终是设置页。
 
 “保存并测试连接”先原子保存当前配置，再调用 Generator 的本地测试端点。该端点使用已保存配置向 DeepSeek Chat Completions 发起一个最小请求，成功才返回“连接成功”。网络、认证、模型或响应异常均返回明确失败状态；失败配置会保留，方便用户修正后再次测试。
 

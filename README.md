@@ -74,7 +74,11 @@ pnpm rebuild electron
 
 ### 配置 DeepSeek
 
-Generator 仅使用 DeepSeek 生成候选知识点和复习卡片。首次启动前，复制 `apps/generator/.env.example` 为同目录 `.env`，并在其中填入 `DEEPSEEK_API_KEY`；`.env` 已被 Git 忽略，不要将真实密钥写入示例文件或提交到仓库。
+Generator 使用 DeepSeek 生成候选知识点和复习卡片。推荐从应用左侧导航的“设置”进入“LLM 配置 / DeepSeek”，填写 API Key、Base URL 和模型名称后保存。桌面端会将配置保存在当前用户的本地应用数据目录；API Key 仅保存在本机，设置页只显示“已配置/未配置”状态，保存后不会回显明文。
+
+“保存配置”会保存当前填写的内容，下一次导入无需重启即可使用新配置。“保存并测试连接”会先保存配置，再向 DeepSeek 发起一次真实的最小 Chat Completions 请求；它可能产生模型调用费用，并会在网络、认证或模型配置异常时显示失败原因。
+
+`apps/generator/.env` 仅保留给独立调试 Generator 的遗留回退：当没有设置 `LEARNING_OS_LLM_CONFIG_PATH` 时，可复制 `apps/generator/.env.example` 为同目录 `.env`，并在其中填入 `DEEPSEEK_API_KEY`。`.env` 已被 Git 忽略，不要将真实密钥写入示例文件或提交到仓库。通过 `pnpm dev`、`pnpm dev:web` 或 `pnpm dev:desktop` 启动时，应使用设置页配置，而不是依赖 `.env`。
 
 默认使用 `https://api.deepseek.com` 与 `deepseek-v4-flash`。若缺少密钥或模型调用失败，导入会失败并显示错误，不会退回规则生成。
 
@@ -173,7 +177,7 @@ cd apps/generator && ../../.venv/bin/python -m pytest tests/test_app.py -q
 
 ## 导入与笔记手动验证
 
-自动单元测试会使用本地替身验证导入流程，不会访问真实网页或调用真实模型；端到端测试不在此说明范围内。完成“配置 DeepSeek”中的环境变量设置后，由用户自行启动 Web 开发链路：
+自动单元测试会使用本地替身验证导入流程，不会访问真实网页或调用真实模型；端到端测试不在此说明范围内。完成“配置 DeepSeek”中的设置页配置后，由用户自行启动 Web 开发链路：
 
 ```bash
 pnpm dev:web
