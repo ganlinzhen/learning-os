@@ -1,5 +1,5 @@
 import type { IngestionDetailDto } from "@learning-os/contracts";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiClient } from "../../shared/api/api-client";
 
@@ -17,6 +17,35 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
   const [loadError, setLoadError] = useState("");
   const [retryError, setRetryError] = useState("");
   const [retrying, setRetrying] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const actionLifecycleRef = useRef({ generation: 0, mounted: true, sessionId });
+
+  if (actionLifecycleRef.current.sessionId !== sessionId) {
+    actionLifecycleRef.current = {
+      generation: actionLifecycleRef.current.generation + 1,
+      mounted: true,
+      sessionId,
+    };
+  }
+
+  useEffect(() => {
+    actionLifecycleRef.current.mounted = true;
+    return () => {
+      actionLifecycleRef.current = {
+        ...actionLifecycleRef.current,
+        generation: actionLifecycleRef.current.generation + 1,
+        mounted: false,
+      };
+    };
+  }, []);
+
+  useEffect(() => {
+    setRetrying(false);
+    setConfirming(false);
+    setRetryError("");
+    setConfirmError("");
+  }, [sessionId]);
 
   useEffect(() => {
     let active = true;
@@ -115,32 +144,77 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
     );
   };
 
+  const captureActionLifecycle = () => {
+    const actionSessionId = sessionId;
+    const actionGeneration = actionLifecycleRef.current.generation;
+    return {
+      sessionId: actionSessionId,
+      isCurrent: () => {
+        const lifecycle = actionLifecycleRef.current;
+        return (
+          lifecycle.mounted &&
+          lifecycle.sessionId === actionSessionId &&
+          lifecycle.generation === actionGeneration
+        );
+      },
+    };
+  };
+
   const confirm = async () => {
-    if (!data) {
+    if (!data || data.sessionId !== sessionId || confirming) {
       return;
     }
-    await apiClient.confirmIngestion(data.sessionId, { selectedCandidateIds });
-    navigate("/library");
+
+    const action = captureActionLifecycle();
+
+    setConfirming(true);
+    setConfirmError("");
+    try {
+      await apiClient.confirmIngestion(action.sessionId, { selectedCandidateIds });
+      if (action.isCurrent()) {
+        navigate("/library");
+      }
+    } catch {
+      if (action.isCurrent()) {
+        setConfirmError("入库失败，请稍后重试。");
+      }
+    } finally {
+      if (action.isCurrent()) {
+        setConfirming(false);
+      }
+    }
   };
 
   const retry = async () => {
-    if (!data || retrying || !data.task.canRetry) {
+    if (!data || data.sessionId !== sessionId || retrying || !data.task.canRetry) {
       return;
     }
+
+    const action = captureActionLifecycle();
 
     setRetrying(true);
     setRetryError("");
     try {
-      await apiClient.retryIngestion(data.sessionId);
-      setData({
-        ...data,
-        status: "processing",
-        task: { ...data.task, status: "running", canRetry: false },
-      });
+      await apiClient.retryIngestion(action.sessionId);
+      if (action.isCurrent()) {
+        setData((current) =>
+          current?.sessionId === action.sessionId
+            ? {
+                ...current,
+                status: "processing",
+                task: { ...current.task, status: "running", canRetry: false },
+              }
+            : current,
+        );
+      }
     } catch {
-      setRetryError("重试失败，请稍后再试。");
+      if (action.isCurrent()) {
+        setRetryError("重试失败，请稍后再试。");
+      }
     } finally {
-      setRetrying(false);
+      if (action.isCurrent()) {
+        setRetrying(false);
+      }
     }
   };
 
@@ -253,8 +327,9 @@ export function IngestionReviewPage({ data: initialData }: { data?: IngestionDet
         <h2>候选知识点</h2>
         {grouped.candidate.length > 0 ? grouped.candidate.map(renderConcept) : <p>当前没有额外候选项。</p>}
       </section>
-      <button onClick={() => void confirm()} type="button">
-        确认入库
+      {confirmError ? <p role="alert">{confirmError}</p> : null}
+      <button disabled={confirming} onClick={() => void confirm()} type="button">
+        {confirming ? "正在入库…" : "确认入库"}
       </button>
     </main>
   );

@@ -62,3 +62,50 @@ rtk pnpm --filter @learning-os/console test -- api-client.spec.ts import-page.te
 
 - 轮询清理会停止后续调度并忽略在途结果，但当前 API client 没有暴露 `AbortSignal`，因此已经发出的 HTTP 请求不会被物理取消；这不影响停止旧轮询和避免旧请求写回的行为。
 - 按项目约束未进行浏览器实机验证，界面布局需由用户按手动路径验收。
+
+---
+
+## P2 修复：用户动作的跨会话异步隔离
+
+### 修复内容
+
+- retry 与 confirm 在动作开始时同时捕获 sessionId 和组件生命周期 generation。
+- sessionId 变化时同步推进 generation；组件卸载时再次推进 generation 并标记生命周期失效。
+- sessionId 变化后重置 retrying、confirming、retryError、confirmError，避免新会话继承旧操作状态。
+- 旧请求的成功、失败和 finally 分支都会检查捕获的 sessionId 与 generation；失效请求不再更新数据、错误、按钮状态或导航。
+- retry 成功使用函数式状态更新，并再次核对当前 data 的 sessionId，避免旧闭包覆盖轮询或新会话数据。
+- confirm 增加进行中 guard；按钮在请求期间禁用并显示“正在入库…”。
+- confirm 失败被捕获并以 `role="alert"` 显示“入库失败，请稍后重试。”，不会产生未处理拒绝。
+
+### TDD 记录
+
+RED 阶段先新增跨会话与确认操作测试。旧实现稳定出现 4 个断言失败和 1 个未处理拒绝：
+
+- 会话 A 重试中切换到 B 后，B 的按钮仍显示“正在重试…”。
+- A 的重试失败会覆盖 B 的原始错误。
+- confirm 没有禁用状态及“正在入库…”文案。
+- A 的 confirm 成功后仍会导航 B；A 的 confirm 失败产生未处理拒绝。
+
+GREEN 阶段实现最小生命周期隔离与确认状态后，新增并保留了以下回归覆盖：
+
+- A→B 后 retry resolve/reject 均不覆盖 B。
+- A→B 后 confirm resolve/reject 均不写入 B 或导航。
+- confirm 双击只调用一次 API，失败显示中文提示并恢复入口。
+- 当前会话 confirm 成功才导航知识库。
+- 组件卸载后 confirm 成功不会继续导航。
+
+### 最终验证
+
+```bash
+rtk pnpm --filter @learning-os/console test -- api-client.spec.ts import-page.test.tsx ingestion-review-page.test.tsx router.test.tsx
+```
+
+结果：5 个测试文件、25 个测试全部通过，0 个未处理错误。
+
+```bash
+rtk pnpm --filter @learning-os/console build
+```
+
+结果：TypeScript 检查与 Vite 生产构建成功，共转换 49 个模块。
+
+本次 P2 修复仅修改会话审核页、对应测试和本报告；未修改服务端、preload、样式或依赖，也未启动 dev server 或浏览器。

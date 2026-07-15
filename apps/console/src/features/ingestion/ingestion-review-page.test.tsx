@@ -5,6 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "../../shared/api/api-client";
 import { IngestionReviewPage } from "./ingestion-review-page";
 
+const navigateMock = vi.hoisted(() => vi.fn());
+
+vi.mock("react-router-dom", async () => {
+  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  return {
+    ...actual,
+    useNavigate: () => navigateMock,
+  };
+});
+
 vi.mock("../../shared/api/api-client", () => ({
   apiClient: {
     confirmIngestion: vi.fn(),
@@ -30,12 +40,13 @@ const createDetail = (overrides: Partial<IngestionDetailDto> = {}): IngestionDet
   ...overrides,
 });
 
-const renderPage = (data?: IngestionDetailDto) =>
-  render(
-    <MemoryRouter>
-      <IngestionReviewPage data={data} />
-    </MemoryRouter>,
-  );
+const renderPageTree = (data?: IngestionDetailDto) => (
+  <MemoryRouter>
+    <IngestionReviewPage data={data} />
+  </MemoryRouter>
+);
+
+const renderPage = (data?: IngestionDetailDto) => render(renderPageTree(data));
 
 describe("IngestionReviewPage", () => {
   beforeEach(() => {
@@ -181,6 +192,188 @@ describe("IngestionReviewPage", () => {
     expect(screen.getByRole("button", { name: "重试" })).toBeEnabled();
   });
 
+  it("旧会话重试成功后不会覆盖新会话", async () => {
+    let resolveRetry!: (value: { sessionId: string; status: "processing" }) => void;
+    vi.mocked(apiClient.retryIngestion).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRetry = resolve;
+      }),
+    );
+    const first = createDetail({
+      sessionId: "session_1",
+      status: "failed",
+      coreConcepts: [],
+      task: { id: "task_1", status: "failed", attemptCount: 1, canRetry: true },
+    });
+    const second = createDetail({
+      sessionId: "session_2",
+      title: "会话 B",
+      status: "failed",
+      coreConcepts: [],
+      task: {
+        id: "task_2",
+        status: "failed",
+        attemptCount: 2,
+        lastErrorMessage: "会话 B 导入失败",
+        canRetry: true,
+      },
+    });
+    const { rerender } = renderPage(first);
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    rerender(renderPageTree(second));
+
+    expect(screen.getByRole("button", { name: "重试" })).toBeEnabled();
+    await act(async () => {
+      resolveRetry({ sessionId: "session_1", status: "processing" });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "会话 B" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("会话 B 导入失败");
+    expect(screen.queryByText("正在整理导入内容，请稍候…")).not.toBeInTheDocument();
+  });
+
+  it("旧会话重试失败后不会把错误写入新会话", async () => {
+    let rejectRetry!: (reason: Error) => void;
+    vi.mocked(apiClient.retryIngestion).mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectRetry = reject;
+      }),
+    );
+    const first = createDetail({
+      sessionId: "session_1",
+      status: "failed",
+      coreConcepts: [],
+      task: { id: "task_1", status: "failed", attemptCount: 1, canRetry: true },
+    });
+    const second = createDetail({
+      sessionId: "session_2",
+      title: "会话 B",
+      status: "failed",
+      coreConcepts: [],
+      task: {
+        id: "task_2",
+        status: "failed",
+        attemptCount: 2,
+        lastErrorMessage: "会话 B 原始错误",
+        canRetry: true,
+      },
+    });
+    const { rerender } = renderPage(first);
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    rerender(renderPageTree(second));
+    await act(async () => {
+      rejectRetry(new Error("session_1_failed"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "会话 B" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("会话 B 原始错误");
+    expect(screen.getByRole("button", { name: "重试" })).toBeEnabled();
+  });
+
+  it("确认入库期间禁用按钮、防止重复提交并展示中文失败提示", async () => {
+    let rejectConfirm!: (reason: Error) => void;
+    vi.mocked(apiClient.confirmIngestion).mockReturnValue(
+      new Promise((_, reject) => {
+        rejectConfirm = reject;
+      }),
+    );
+    renderPage(createDetail());
+
+    fireEvent.click(screen.getByRole("button", { name: "确认入库" }));
+    const confirmingButton = screen.getByRole("button", { name: "正在入库…" });
+    expect(confirmingButton).toBeDisabled();
+    fireEvent.click(confirmingButton);
+    expect(apiClient.confirmIngestion).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      rejectConfirm(new Error("request_failed"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("入库失败，请稍后重试。");
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeEnabled();
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("当前会话确认成功后导航到知识库", async () => {
+    vi.mocked(apiClient.confirmIngestion).mockResolvedValueOnce({ importedConceptCount: 1 });
+    renderPage(createDetail());
+
+    fireEvent.click(screen.getByRole("button", { name: "确认入库" }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(navigateMock).toHaveBeenCalledOnce();
+    expect(navigateMock).toHaveBeenCalledWith("/library");
+  });
+
+  it("旧会话确认成功后不会导航新会话", async () => {
+    let resolveConfirm!: (value: { importedConceptCount: number }) => void;
+    vi.mocked(apiClient.confirmIngestion).mockReturnValueOnce(
+      new Promise<{ importedConceptCount: number }>((resolve) => {
+        resolveConfirm = resolve;
+      }),
+    );
+    const { rerender } = renderPage(createDetail({ sessionId: "session_1" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "确认入库" }));
+    rerender(renderPageTree(createDetail({ sessionId: "session_2", title: "会话 B" })));
+    await act(async () => {
+      resolveConfirm({ importedConceptCount: 1 });
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "会话 B" })).toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeEnabled();
+  });
+
+  it("旧会话确认失败后不会把错误写入新会话", async () => {
+    let rejectConfirm!: (reason: Error) => void;
+    vi.mocked(apiClient.confirmIngestion).mockReturnValueOnce(
+      new Promise((_, reject) => {
+        rejectConfirm = reject;
+      }),
+    );
+    const { rerender } = renderPage(createDetail({ sessionId: "session_1" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "确认入库" }));
+    rerender(renderPageTree(createDetail({ sessionId: "session_2", title: "会话 B" })));
+    await act(async () => {
+      rejectConfirm(new Error("session_1_failed"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "会话 B" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "确认入库" })).toBeEnabled();
+  });
+
+  it("组件卸载后确认成功不会继续导航", async () => {
+    let resolveConfirm!: (value: { importedConceptCount: number }) => void;
+    vi.mocked(apiClient.confirmIngestion).mockReturnValueOnce(
+      new Promise<{ importedConceptCount: number }>((resolve) => {
+        resolveConfirm = resolve;
+      }),
+    );
+    const { unmount } = renderPage(createDetail());
+
+    fireEvent.click(screen.getByRole("button", { name: "确认入库" }));
+    unmount();
+    await act(async () => {
+      resolveConfirm({ importedConceptCount: 1 });
+      await Promise.resolve();
+    });
+
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
   it("组件卸载后停止轮询并忽略尚未完成的请求", async () => {
     vi.useFakeTimers();
     let resolveDetail!: (value: IngestionDetailDto) => void;
@@ -228,11 +421,7 @@ describe("IngestionReviewPage", () => {
     });
     const { rerender } = renderPage(first);
 
-    rerender(
-      <MemoryRouter>
-        <IngestionReviewPage data={second} />
-      </MemoryRouter>,
-    );
+    rerender(renderPageTree(second));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
